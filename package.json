@@ -22,11 +22,22 @@
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "^0.0.16",
-    "hono": "4.13.19"
+    "@evenrealities/pretext": "0.1.4",
+    "class-variance-authority": "~0.7.1",
+    "clsx": "^2.1.1",
+    "even-toolkit": "1.7.7",
+    "hono": "4.13.19",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "tailwind-merge": "^3.7.1"
   },
   "devDependencies": {
     "@evenrealities/evenhub-cli": "^0.2.0",
     "@evenrealities/evenhub-simulator": "^0.9.5",
+    "@tailwindcss/vite": "4.3.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "tailwindcss": "4.3.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.8"
   }

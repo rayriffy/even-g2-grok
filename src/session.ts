@@ -1,6 +1,6 @@
 import type { AccountProfile, Bot, BotClient, Message, Profile } from './client.ts'
 import { demos } from './demo.ts'
-import { followPage } from './hud-text.ts'
+import { ACCOUNT_ROWS, followPage, INBOX_ROWS } from './hud-text.ts'
 
 export interface Account extends Profile { key: string; speechKey: string }
 export interface StoredAccounts { accounts: Account[]; activeId: string }
@@ -47,6 +47,7 @@ export class Session {
   activeId = ''
   view: View = 'inbox'
   selection = 0
+  firstVisible = 0
   botId = ''
   pageFromEnd = 0
   accountStatus = ''
@@ -154,6 +155,8 @@ export class Session {
       this.inbox()
       void this.refresh()
       void this.refreshRoster()
+    } else if (this.view === 'accounts') {
+      this.moveSelection(this.selection)
     }
     this.save()
     this.render()
@@ -195,7 +198,7 @@ export class Session {
       } : item)
       this.save()
       if (this.botId && !bots.some(bot => bot.id === this.botId)) this.inbox()
-      this.selection = Math.min(this.selection, Math.max(0, bots.length - 1))
+      if (this.view === 'inbox') this.moveSelection(this.selection)
       this.render()
       void this.refresh()
     } catch (error) {
@@ -215,6 +218,7 @@ export class Session {
     this.view = 'inbox'
     this.botId = ''
     this.selection = 0
+    this.firstVisible = 0
     this.voiceStatus = ''
     this.render()
   }
@@ -223,7 +227,8 @@ export class Session {
     this.cancelVoice()
     this.view = 'accounts'
     this.botId = ''
-    this.selection = Math.max(0, this.accounts.findIndex(account => account.id === this.activeId))
+    this.firstVisible = 0
+    this.moveSelection(this.accounts.findIndex(account => account.id === this.activeId))
     this.render()
   }
 
@@ -253,12 +258,27 @@ export class Session {
 
   scroll(direction: number, pageCount: number) {
     if (this.view === 'chat') {
-      this.pageFromEnd = Math.min(Math.max(0, pageCount - 1), Math.max(0, this.pageFromEnd - direction))
+      const next = Math.min(Math.max(0, pageCount - 1), Math.max(0, this.pageFromEnd - direction))
+      if (next === this.pageFromEnd) return
+      this.pageFromEnd = next
     } else {
-      const count = this.view === 'accounts' ? this.accounts.length : this.active?.bots.length ?? 0
-      this.selection = Math.min(Math.max(0, count - 1), Math.max(0, this.selection + direction))
+      const previous = this.selection
+      this.moveSelection(previous + direction)
+      if (this.selection === previous) return
     }
     this.render()
+  }
+
+  private moveSelection(index: number) {
+    const isAccountPicker = this.view === 'accounts'
+    const count = isAccountPicker ? this.accounts.length : this.active?.bots.length ?? 0
+    const rows = isAccountPicker ? ACCOUNT_ROWS : INBOX_ROWS
+    this.selection = Math.max(0, Math.min(index, count - 1))
+    this.firstVisible = Math.max(0, Math.min(
+      Math.max(this.firstVisible, this.selection - rows + 1),
+      this.selection,
+      count - rows,
+    ))
   }
 
   microphone(status: string, recording = false) {

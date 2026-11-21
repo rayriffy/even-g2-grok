@@ -4,7 +4,8 @@ import { setImmediate } from 'node:timers/promises'
 import { OsEventTypeList } from '@evenrealities/even_hub_sdk'
 import type { BotClient, Message, ReadResult } from '../src/client.ts'
 import { demoClient } from '../src/demo.ts'
-import { eventType, glassFrame, preview } from '../src/hud.ts'
+import { eventType, glassFrame } from '../src/hud.ts'
+import { preview } from '../src/hud-text.ts'
 import { Session, type StoredAccounts } from '../src/session.ts'
 import { PushToTalk } from '../src/voice.ts'
 
@@ -25,25 +26,33 @@ test('first run, two-line previews, conversations, account switching and restore
     async load() { return saved },
     async save(state) { saved = state },
   }, true, () => {})
-  assert.match(glassFrame(original).text, /Connect an account/)
+  assert.equal(glassFrame(original).status, 'Connect an account')
   await original.connect('studio', '')
   await setImmediate()
-  const inbox = glassFrame(original).text.split('\n')
-  assert.match(inbox[2], /^> Scout$/)
-  assert.match(inbox[4], /…$/)
-  assert.match(inbox[5], /Desk/)
+  const inbox = glassFrame(original).body.split('\n')
+  assert.match(inbox[0], /^> Scout$/)
+  assert.match(inbox[1], /three routes/)
+  assert.match(inbox[2], /outdoor tables/)
+  assert.equal(inbox[3], '')
+  assert.match(inbox[4], /Desk/)
+  assert.equal(inbox.length, 7)
+  assert.match(preview('A longer preview that has to wrap. '.repeat(10))[1], /…$/)
   original.scroll(1, 0)
   original.select()
   assert.equal(original.currentBot?.id, 'desk')
-  assert.match(glassFrame(original).text, /\[BOT\]/)
+  assert.match(glassFrame(original).body, /^· /)
+  original.microphone('Listening…', true)
+  assert.equal(glassFrame(original).status, 'Recording…')
+  assert.equal(glassFrame(original).hint, 'Release to send')
+  assert.doesNotMatch(glassFrame(original).body, /Release to send/)
   await original.connect('personal', '')
   await setImmediate()
   original.accountPicker()
   original.scroll(-1, 0)
   original.select()
   assert.equal(original.activeId, 'studio')
-  assert.match(glassFrame(original).text, /Scout/)
-  assert.doesNotMatch(glassFrame(original).text, /Field Notes/)
+  assert.match(glassFrame(original).body, /Scout/)
+  assert.doesNotMatch(glassFrame(original).body, /Field Notes/)
   await setImmediate()
   const restored = new Session(demoClient(), { async load() { return saved }, async save() {} }, true, () => {})
   await restored.restore()
@@ -59,10 +68,60 @@ test('SDK opens on omitted zero event type, handles hold and release, and ignore
   assert.equal(eventType({ audioEvent: { audioPcm: new Uint8Array(1) } } as Parameters<typeof eventType>[0]), undefined)
 })
 
+test('inbox swipes keep the visible bots until the selection reaches an edge', async () => {
+  const bots = ['One', 'Two', 'Three', 'Four'].map(name => ({ id: name, name }))
+  const session = new Session(demoClient(), {
+    async load() { return { accounts: [{ id: 'studio', name: 'Studio', bots, key: 'studio', speechKey: '' }], activeId: 'studio' } },
+    async save() {},
+  }, true, () => {})
+  await session.restore()
+  const swipe = (direction: number) => session.scroll(direction, 0)
+  const names = () => glassFrame(session).body.split('\n').filter((_, index) => index % 4 === 0)
+  assert.deepEqual(names(), ['> One', '  Two'])
+  swipe(-1)
+  assert.deepEqual(names(), ['> One', '  Two'])
+  swipe(1)
+  assert.deepEqual(names(), ['  One', '> Two'])
+  swipe(1)
+  assert.deepEqual(names(), ['  Two', '> Three'])
+  swipe(1)
+  assert.deepEqual(names(), ['  Three', '> Four'])
+  swipe(1)
+  assert.deepEqual(names(), ['  Three', '> Four'])
+  swipe(-1)
+  assert.deepEqual(names(), ['> Three', '  Four'])
+  swipe(-1)
+  assert.deepEqual(names(), ['> Two', '  Three'])
+  session.select()
+  assert.equal(session.currentBot?.id, 'Two')
+})
+
+test('chat swipes advance one line at a time and stop at both ends', async () => {
+  const messages: Message[] = [{ id: '1', role: 'bot', text: Array.from({ length: 10 }, (_, i) => 'Line ' + i).join('\n'), at: 0 }]
+  const { session } = fixture({
+    ...demoClient(),
+    async read(_key, targets) {
+      return targets.map(({ bot }) => ({ id: bot.id, transcript: { messages, cursor: '1', busy: false } }))
+    },
+  })
+  await session.connect('studio')
+  await setImmediate()
+  session.select()
+  const firstLine = () => glassFrame(session).body.split('\n')[0].trim()
+  assert.equal(firstLine(), 'Line 3')
+  for (const [direction, expected] of [
+    [1, 'Line 3'], [-1, 'Line 2'], [-1, 'Line 1'], [-1, '· Line 0'], [-1, '· Line 0'],
+    [1, 'Line 1'], [1, 'Line 2'], [1, 'Line 3'], [1, 'Line 3'],
+  ] as const) {
+    session.scroll(direction, glassFrame(session).pages)
+    assert.equal(firstLine(), expected)
+  }
+})
+
 test('a long incoming reply keeps the same G2 page selected and the open chat reads only its bot', async () => {
   let records: Message[] = [
     { id: '1', role: 'bot', text: 'The page I am reading.', at: 1 },
-    { id: '2', role: 'you', text: 'Second message.', at: 2 },
+    { id: '2', role: 'you', text: 'Second message.\n' + Array.from({length: 6}, (_, i) => 'History line ' + i).join('\n'), at: 2 },
   ]
   const seen: string[][] = []
   const { session } = fixture({
@@ -84,14 +143,17 @@ test('a long incoming reply keeps the same G2 page selected and the open chat re
   session.select()
   await setImmediate()
   session.scroll(-1, glassFrame(session).pages)
-  assert.match(glassFrame(session).text, /The page I am reading/)
+  const originalBody = glassFrame(session).body
+  assert.match(originalBody, /The page I am reading/)
+  assert.equal(originalBody.split('\n').length, 7)
   records = [...records, { id: '3', role: 'bot', text: 'A long incoming reply. '.repeat(30) + 'Last line.', at: 3 }]
   await session.refresh()
   assert.deepEqual(seen, [['scout', 'desk'], ['scout'], ['scout']])
   assert.ok(glassFrame(session).pages > 4)
-  assert.match(glassFrame(session).text, /The page I am reading/)
+  assert.equal(glassFrame(session).body, originalBody)
+  assert.equal(glassFrame(session).status, 'Reading history')
   session.select()
-  assert.match(glassFrame(session).text, /Last line/)
+  assert.match(glassFrame(session).body, /Last line/)
 })
 
 test('hold captures bytes, release closes microphone then submits exactly one transcript', async () => {
@@ -114,7 +176,7 @@ test('hold captures bytes, release closes microphone then submits exactly one tr
   await setImmediate()
   assert.deepEqual(toggles, [true, false])
   assert.equal(session.currentThread.messages.filter(message => message.role === 'you').length, 1)
-  assert.match(glassFrame(session).text, /Demo reply/)
+  assert.match(glassFrame(session).body, /Demo reply/)
   mic.press()
   mic.audio(new Uint8Array(4800))
   mic.cancel()
@@ -134,7 +196,7 @@ test('a delayed transcript read cannot repopulate an account after switching', a
   await setImmediate()
   assert.equal(session.activeId, 'personal')
   assert.equal(session.thread('scout').messages.length, 0)
-  assert.match(glassFrame(session).text, /Field Notes/)
+  assert.match(glassFrame(session).body, /Field Notes/)
 })
 
 test('an ambiguous delivery reuses its message ID when the same draft is retried', async () => {

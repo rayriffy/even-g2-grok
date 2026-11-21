@@ -5,7 +5,7 @@ import { demoClient } from './demo.ts'
 import { connectHud, eventType, glassFrame, MENU_ACCOUNTS, MENU_INBOX } from './hud.ts'
 import { Session, type AccountStorage, type StoredAccounts } from './session.ts'
 import { PushToTalk } from './voice.ts'
-import { mountUi } from './ui.ts'
+import { mountUi } from './ui.tsx'
 import './styles.css'
 
 const gatewayBase = (import.meta.env.VITE_GATEWAY_BASE_URL ?? import.meta.env.VITE_GATEWAY_ORIGIN ?? '')
@@ -56,7 +56,7 @@ const storage: AccountStorage = {
 
 session = new Session(demo ? demoClient() : gatewayClient(gatewayBase), storage, demo, () => {
   ui.render(session)
-  hud?.render(glassFrame(session).text)
+  hud?.render(glassFrame(session))
 })
 
 let closed = false
@@ -93,7 +93,7 @@ void ready.then(async connected => {
     bridge = connected
     await session.restore()
   }
-  hud = await connectHud(connected, glassFrame(session).text, () => ui.connection('Glasses display unavailable'))
+  hud = await connectHud(connected, glassFrame(session), () => ui.connection('Glasses display unavailable'))
   if (closed) { hud.close(); return }
   ui.connection(demo ? 'G2 connected · Demo' : 'G2 connected')
   voice = new PushToTalk(
