@@ -1,0 +1,3 @@
+[submodule "g2-notes"]
+	path = g2-notes
+	url = git@github.com:nickustinov/even-g2-notes.git
