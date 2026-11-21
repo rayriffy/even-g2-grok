@@ -118,11 +118,13 @@ export function createGateway(fetchUpstream: typeof fetch = fetch) {
       throw new GatewayError('Use a personal Cursor API key from the account that owns your bots.', 422)
     }
     const name = [profile.firstName, profile.lastName].filter(value => typeof value === 'string' && value).join(' ')
+    const email = typeof profile.email === 'string' ? profile.email.trim() || undefined : undefined
     const agents = Array.isArray(roster?.agents) ? roster.agents : []
     const botNames = roster ? [...new Set(agents.map(agentName).filter((name): name is string => name !== undefined))] : undefined
     return context.json({
       id: String(profile.userId),
-      name: name || (typeof profile.email === 'string' ? profile.email : 'Cursor account'),
+      name: name.trim() || email || 'Cursor account',
+      email,
       botNames,
       bots: roster ? discoveredBots(agents) : undefined,
     })

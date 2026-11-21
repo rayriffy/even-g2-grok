@@ -2,10 +2,11 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { setImmediate } from 'node:timers/promises'
 import { OsEventTypeList } from '@evenrealities/even_hub_sdk'
+import { getTextWidth } from '@evenrealities/pretext'
 import type { BotClient, Message, ReadResult } from '../src/client.ts'
 import { demoClient } from '../src/demo.ts'
 import { eventType, glassFrame } from '../src/hud.ts'
-import { preview } from '../src/hud-text.ts'
+import { HUD_BODY_WIDTH, preview } from '../src/hud-text.ts'
 import { Session, type StoredAccounts } from '../src/session.ts'
 import { PushToTalk } from '../src/voice.ts'
 
@@ -66,6 +67,33 @@ test('SDK opens on omitted zero event type, handles hold and release, and ignore
   assert.equal(eventType({ textEvent: { eventType: OsEventTypeList.LONG_PRESS_EVENT } }), OsEventTypeList.LONG_PRESS_EVENT)
   assert.equal(eventType({ sysEvent: { eventType: OsEventTypeList.LONG_PRESS_RELEASE_EVENT } }), OsEventTypeList.LONG_PRESS_RELEASE_EVENT)
   assert.equal(eventType({ audioEvent: { audioPcm: new Uint8Array(1) } } as Parameters<typeof eventType>[0]), undefined)
+})
+
+test('saved accounts fill in their emails and display one measured line each', async () => {
+  const email = 'example-' + 'very-long-address-'.repeat(8) + '@example.test'
+  let saved: StoredAccounts = {
+    activeId: 'studio',
+    accounts: ['studio', 'personal'].map(id => ({ id, key: id, name: 'Same name', speechKey: '', bots: [] })),
+  }
+  const session = new Session({
+    ...demoClient(),
+    async profile(id) {
+      return { id, name: 'Same name', email: id === 'studio' ? 'studio@example.test' : email, bots: [] }
+    },
+  }, {
+    async load() { return saved },
+    async save(value) { saved = value },
+  }, false, () => {})
+  await session.restore()
+  await setImmediate()
+  session.accountPicker()
+  const rows = glassFrame(session).body.split('\n')
+  assert.equal(rows[0], '> Same name (studio@example.test) *')
+  assert.match(rows[1], /^  Same name \(example-.*…$/u)
+  assert.equal(rows.length, 2)
+  assert.ok(rows.every(row => getTextWidth(row) <= HUD_BODY_WIDTH))
+  assert.equal(saved.accounts.find(item => item.id === 'personal')?.email, email)
+  session.close()
 })
 
 test('inbox swipes keep the visible bots until the selection reaches an edge', async () => {

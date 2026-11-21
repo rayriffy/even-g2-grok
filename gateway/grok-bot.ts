@@ -14,25 +14,33 @@ export function chatRef(value: unknown): ChatRef | undefined {
   if (providerId(agentId) && (sessionId === '' || providerId(sessionId))) return { agentId, sessionId }
 }
 
+function isGroup(kind: unknown) {
+  return kind === 2 || kind === 'GROK_BOT_AGENT_KIND_ROOM'
+}
+
+function rosterName(name: unknown) {
+  if (typeof name === 'string' && name.trim() && name.length <= 120) return name.trim()
+}
+
 export function agentName(value: unknown) {
   const { kind, name } = record(value)
-  if (kind === 2 || kind === 'GROK_BOT_AGENT_KIND_ROOM') return
-  if (typeof name === 'string' && name.trim() && name.length <= 120) return name
+  if (!isGroup(kind)) return rosterName(name)
 }
 
 export function discoveredBots(agents: unknown[]): Bot[] {
   const bots = new Map<string, Bot>()
   for (const entry of agents) {
-    const name = agentName(entry)
+    const { id, agentId, legacyAgentId, viewerSessionId, kind, name: rawName } = record(entry)
+    const group = isGroup(kind)
+    const name = rosterName(rawName) ?? (group ? 'Group chat' : undefined)
     if (!name) continue
-    const { id, agentId, legacyAgentId, viewerSessionId } = record(entry)
     const chat = chatRef({
       agentId: [agentId, legacyAgentId, id].find(providerId),
       sessionId: viewerSessionId ?? '',
     })
     if (!chat) continue
     const key = 'grok:' + JSON.stringify([chat.agentId, chat.sessionId])
-    bots.set(key, { id: key, name, chat })
+    bots.set(key, { id: key, name, chat, ...(group ? { kind: 'group' } : {}) })
   }
   return [...bots.values()]
 }

@@ -1,6 +1,6 @@
 export interface ChatRef { agentId: string; sessionId: string }
-export interface Bot { id: string; name: string; chat?: ChatRef }
-export interface Profile { id: string; name: string; bots: Bot[]; botNames?: string[] }
+export interface Bot { id: string; name: string; chat?: ChatRef; kind?: 'group' }
+export interface Profile { id: string; name: string; email?: string; bots: Bot[]; botNames?: string[] }
 export type AccountProfile = Omit<Profile, 'bots'> & { bots?: Bot[] }
 export interface Message { id: string; role: 'you' | 'bot'; text: string; at: number }
 export interface Transcript { messages: Message[]; cursor: string; busy: boolean; reset?: boolean }

@@ -3,7 +3,7 @@ import {
   StartUpPageCreateResult, TextContainerProperty, TextContainerUpgrade,
   type EvenAppBridge, type EvenHubEvent,
 } from '@evenrealities/even_hub_sdk'
-import type { Session } from './session.ts'
+import { accountLabel, type Session } from './session.ts'
 import { ACCOUNT_ROWS, chatViewport, HUD_BODY_WIDTH, INBOX_ROWS, preview, truncate } from './hud-text.ts'
 
 export const MENU_ACCOUNTS = 1
@@ -35,7 +35,7 @@ export function glassFrame(session: Session): GlassFrame {
   if (session.view === 'accounts') {
     const start = session.firstVisible
     const accounts = session.accounts.slice(start, start + ACCOUNT_ROWS).map((account, index) =>
-      `${start + index === session.selection ? '>' : ' '} ${truncate(account.name, HUD_BODY_WIDTH - 45)}${account.id === session.activeId ? ' *' : ''}`)
+      `${start + index === session.selection ? '>' : ' '} ${truncate(accountLabel(account), HUD_BODY_WIDTH - 45)}${account.id === session.activeId ? ' *' : ''}`)
     return {
       screen: 'accounts',
       title: 'Accounts',
@@ -51,13 +51,14 @@ export function glassFrame(session: Session): GlassFrame {
     const start = session.firstVisible
     const rows = bots.slice(start, start + INBOX_ROWS).map((bot, index) => {
       const [first, second] = preview(session.thread(bot.id).messages.at(-1)?.text ?? 'No messages yet.')
-      return [`${start + index === session.selection ? '>' : ' '} ${truncate(bot.name, HUD_BODY_WIDTH - 25)}`, `  ${first}`, `  ${second}`].join('\n')
+      const name = bot.kind === 'group' ? bot.name + ' (Group)' : bot.name
+      return [`${start + index === session.selection ? '>' : ' '} ${truncate(name, HUD_BODY_WIDTH - 25)}`, `  ${first}`, `  ${second}`].join('\n')
     })
     return {
       screen: `inbox:${session.active.id}`,
-      title: truncate(`Bots / ${session.active.name}`),
-      body: rows.join('\n\n') || 'No bots yet. Open the phone dashboard.',
-      status: bots.length ? `${session.selection + 1} / ${bots.length}` : 'Bot inbox',
+      title: truncate(`Chats / ${session.active.name}`),
+      body: rows.join('\n\n') || 'No chats yet. Open the phone dashboard.',
+      status: bots.length ? `${session.selection + 1} / ${bots.length}` : 'Chat inbox',
       hint: bots.length ? 'Tap to open   ·   Menu for accounts' : 'Menu for accounts',
       pages: 0,
     }
@@ -121,7 +122,7 @@ export async function connectHud(bridge: EvenAppBridge, firstFrame: GlassFrame, 
   const menuObject = new MenuContainerProperty({
     menuItems: [
       new MenuItemProperty({ itemID: MENU_ACCOUNTS, itemName: 'Switch account' }),
-      new MenuItemProperty({ itemID: MENU_INBOX, itemName: 'Bot inbox' }),
+      new MenuItemProperty({ itemID: MENU_INBOX, itemName: 'Chat inbox' }),
     ],
   })
   function page(frame: GlassFrame) {

@@ -1,14 +1,18 @@
 import type { BotClient, Message, Profile } from './client.ts'
 
 export const demos: Record<string, Profile> = {
-  studio: { id: 'studio', name: 'Studio', bots: [{ id: 'scout', name: 'Scout' }, { id: 'desk', name: 'Desk' }] },
-  personal: { id: 'personal', name: 'Personal', bots: [{ id: 'field', name: 'Field Notes' }] },
+  studio: { id: 'studio', name: 'Studio', email: 'studio@example.test', bots: [{ id: 'scout', name: 'Scout' }, { id: 'desk', name: 'Desk' }] },
+  personal: {
+    id: 'personal', name: 'Personal', email: 'personal@example.test',
+    bots: [{ id: 'field', name: 'Field Notes' }, { id: 'weekend', name: 'Weekend Plans', kind: 'group' }],
+  },
 }
 
 const opening: Record<string, string> = {
   scout: 'I found three routes for Saturday. The canal loop is quiet early and passes a café with outdoor tables.',
   desk: 'Your agenda is clear after 3 PM. I pulled the open decisions into a short checklist for the afternoon.',
   field: 'The packing list is ready. I moved the microphone and spare cable into the front-pocket checklist.',
+  weekend: 'The group agreed to meet at the north entrance at 9. Scout will check the trail conditions in the morning.',
 }
 
 export function demoClient(): BotClient {

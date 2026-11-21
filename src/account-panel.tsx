@@ -5,7 +5,7 @@ import { Input } from 'even-toolkit/web/input'
 import { ListItem } from 'even-toolkit/web/list-item'
 import { SectionHeader } from 'even-toolkit/web/section-header'
 import type { CursorLogin } from './cursor-login.ts'
-import type { Account, Session } from './session.ts'
+import { accountLabel, type Account, type Session } from './session.ts'
 
 export interface AccountActions {
   connect(key: string, signal?: AbortSignal): Promise<boolean>
@@ -35,12 +35,12 @@ export function AccountPanel({ session, demo, hidden, actions, onConnected }: {
           {session.accounts.map(account => (
             <li className="account-row" key={account.id} aria-current={account.id === session.activeId || undefined}>
               <ListItem
-                title={account.name}
+                title={accountLabel(account)}
                 subtitle={account.id === session.activeId ? 'Active account' : undefined}
                 onPress={() => { actions.switchAccount(account.id); onConnected() }}
               />
-              <Button variant="ghost" size="sm" aria-label={'Remove ' + account.name} onClick={() => {
-                if (window.confirm('Remove ' + account.name + ' from this phone?')) actions.disconnect(account.id)
+              <Button variant="ghost" size="sm" aria-label={'Remove ' + accountLabel(account)} onClick={() => {
+                if (window.confirm('Remove ' + accountLabel(account) + ' from this phone?')) actions.disconnect(account.id)
               }}>Remove</Button>
             </li>
           ))}

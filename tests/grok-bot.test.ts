@@ -42,6 +42,7 @@ test('sign-in shows existing bot conversations and hold-to-talk uses the account
   let exchanges = 0
   let latestGeneration = 17
   let submittedId = ''
+  let groupDelivery = false
   const readTargets: string[] = []
   const app = createGateway(async (input, init) => {
     const request = new Request(input, init)
@@ -58,14 +59,14 @@ test('sign-in shows existing bot conversations and hold-to-talk uses the account
     assert.equal(request.headers.get('Authorization'), `Bearer ${accessToken}`)
     assert.equal(request.headers.get('Connect-Protocol-Version'), '1')
     if (url.pathname === '/aiserver.v1.DashboardService/GetMe') {
-      return Response.json({ userId: 41, firstName: 'Test' })
+      return Response.json({ userId: 41, firstName: 'Test', email: 'owner@example.test' })
     }
     if (url.pathname === service + 'ListGrokBotAgents') {
       assert.deepEqual(body, { includeTeamAgents: false })
       return Response.json({ agents: [
         { id: '20', agentId: 'agent-1', kind: 1, name: 'Scout', viewerSessionId: 'session-A' },
         { id: '21', agentId: 'agent-2', kind: 1, name: 'Scout', viewerSessionId: 'session-B' },
-        { id: '22', agentId: 'room-1', kind: 2, name: 'Shared room' },
+        { id: '22', agentId: 'room-1', kind: 2, name: 'Shared room', viewerSessionId: 'room-session' },
       ] })
     }
     if (url.pathname === service + 'ListGrokBotTranscriptEntries') {
@@ -74,6 +75,12 @@ test('sign-in shows existing bot conversations and hold-to-talk uses the account
       if (body.agentId === 'agent-2') {
         assert.equal(body.sessionId, 'session-B')
         return Response.json({ entries: [], generation: 2 })
+      }
+      if (body.agentId === 'room-1') {
+        assert.equal(body.sessionId, 'room-session')
+        return Response.json({ generation: 4, entries: [
+          { entryKind: 'send-message', seq: '1', body: encode({ text: 'Shared group update.' }) },
+        ] })
       }
       assert.equal(body.agentId, 'agent-1')
       assert.equal(body.sessionId, 'session-A')
@@ -98,6 +105,12 @@ test('sign-in shows existing bot conversations and hold-to-talk uses the account
       return Response.json({ text: 'Read my new agenda.' })
     }
     assert.equal(url.pathname, service + 'SendGrokBotUserMessage')
+    if (body.agentId === 'room-1') {
+      assert.equal(body.sessionId, 'room-session')
+      assert.equal(body.text, 'Message to the group.')
+      groupDelivery = true
+      return Response.json({ dispatched: true })
+    }
     assert.equal(body.agentId, 'agent-1')
     assert.equal(body.sessionId, 'session-A')
     assert.match(body.messageId, /^[a-f0-9-]{36}$/u)
@@ -110,9 +123,11 @@ test('sign-in shows existing bot conversations and hold-to-talk uses the account
   const session = new Session(client, { async load() {}, async save() {} }, false, () => {})
   assert.equal(await session.connect(accountKey), true)
   await setImmediate()
-  assert.equal(session.active?.bots.length, 2)
-  assert.deepEqual(readTargets, ['agent-1', 'agent-2'])
-  assert.equal(exchanges, 2, 'one exchange for profile and a single shared exchange for both chats')
+  assert.equal(session.active?.email, 'owner@example.test')
+  assert.deepEqual(session.active?.botNames, ['Scout'])
+  assert.equal(session.active?.bots.length, 3)
+  assert.deepEqual(readTargets, ['agent-1', 'agent-2', 'room-1'])
+  assert.equal(exchanges, 2, 'one exchange for profile and a single shared exchange for all chats')
   const inbox = glassFrame(session).body.split('\n')
   assert.equal(inbox[0], '> Scout')
   assert.match(inbox[1], /I found/)
@@ -135,6 +150,15 @@ test('sign-in shows existing bot conversations and hold-to-talk uses the account
   latestGeneration = 18
   await session.refresh()
   assert.deepEqual(session.currentThread.messages.map(message => message.text), ['New session.'])
+  session.inbox()
+  session.scroll(1, 0)
+  session.scroll(1, 0)
+  assert.match(glassFrame(session).body, /> Shared room \(Group\)\n  Shared group update\./)
+  session.select()
+  assert.equal(session.currentBot?.kind, 'group')
+  assert.match(glassFrame(session).body, /Shared group update\./)
+  assert.equal(await session.sendText('Message to the group.'), true)
+  assert.equal(groupDelivery, true)
   session.close()
 })
 

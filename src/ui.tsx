@@ -46,8 +46,8 @@ function Dashboard({ session, demo, connection, actions }: {
   const [showAccounts, setShowAccounts] = useState(false)
   const { active, currentBot: bot } = session
   const accountsOpen = !active || showAccounts || session.view === 'accounts'
-  const choices = active?.botNames?.filter(name => !active.bots.some(item => item.name === name)) ?? []
-  const canLink = !demo && (choices.length > 0 || !active?.bots.some(item => item.chat))
+  const choices = active?.botNames?.filter(name => !active.bots.some(item => item.kind !== 'group' && item.name === name)) ?? []
+  const canLink = !demo && (choices.length > 0 || !active?.bots.some(item => item.kind !== 'group' && item.chat))
   return (
     <div className={bot && !accountsOpen ? 'dashboard chat-open' : 'dashboard'}>
       <header className="dashboard-header">
@@ -72,20 +72,25 @@ function Dashboard({ session, demo, connection, actions }: {
                 voiceStatus={session.voiceStatus || 'On G2, hold to talk and release to send.'}
                 busy={session.working || session.recording} onBack={actions.inbox} onSend={actions.send} />
             ) : (
-              <section className="stack" aria-label="Bots">
-                <SectionHeader title="Bots" className="m-0" action={<span className="profile-name text-subtitle">{active.name}</span>} />
+              <section className="stack" aria-label="Chats">
+                <SectionHeader title="Chats" className="m-0" action={<span className="profile-name text-subtitle">{active.name}</span>} />
                 {active.bots.length ? (
                   <ul className="stack compact" id="bots">
                     {active.bots.map(item => (
                       <li key={item.id}>
                         <ListItem title={item.name} subtitle={session.thread(item.id).messages.at(-1)?.text ?? 'No messages yet.'}
-                          className="bot-row" trailing={<IcGuideChevronSmallDrillIn width={20} height={20} aria-hidden />}
+                          className="bot-row" trailing={
+                            <span className="flex items-center gap-2">
+                              {item.kind === 'group' && <span className="text-subtitle text-text-dim">Group</span>}
+                              <IcGuideChevronSmallDrillIn width={20} height={20} aria-hidden />
+                            </span>
+                          }
                           onPress={() => actions.openBot(item.id)} />
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <Card><EmptyState title="No bots yet" description={canLink ? 'Link a bot to start a conversation.' : undefined} /></Card>
+                  <Card><EmptyState title="No chats yet" description={canLink ? 'Link a bot to start a conversation.' : undefined} /></Card>
                 )}
                 {canLink && <LinkBot key={active.id} choices={choices} session={session} onLink={actions.link} />}
               </section>
@@ -166,7 +171,7 @@ function Chat({ bot, messages, visible, voiceStatus, busy, onBack, onSend }: {
     <section className="chat-screen" aria-label={bot.name}>
       <div className="chat-heading">
         <Button variant="default" className="back-button" onClick={onBack}>
-          <IcChevronBack width={20} height={20} aria-hidden /> Bots
+          <IcChevronBack width={20} height={20} aria-hidden /> Chats
         </Button>
         <h2 className="text-large-title">{bot.name}</h2>
       </div>

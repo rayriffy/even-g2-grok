@@ -10,6 +10,13 @@ export interface AccountStorage {
 }
 
 export type View = 'inbox' | 'accounts' | 'chat'
+
+export function accountLabel(account: Pick<Profile, 'name' | 'email'>) {
+  const name = account.name.replace(/\s+/gu, ' ').trim()
+  const email = account.email?.replace(/\s+/gu, ' ').trim()
+  return email && email !== name ? name + ' (' + email + ')' : name
+}
+
 interface Thread {
   cursor: string
   messages: Message[]
@@ -38,7 +45,7 @@ function newMessageId() {
 
 function accountBots(profile: AccountProfile, previous: Bot[]) {
   if (profile.bots === undefined) return previous
-  const names = new Set(profile.bots.map(bot => bot.name))
+  const names = new Set(profile.bots.filter(bot => bot.kind !== 'group').map(bot => bot.name))
   return [...profile.bots, ...previous.filter(bot => !bot.chat && !names.has(bot.name))]
 }
 
@@ -59,6 +66,7 @@ export class Session {
   private threads = new Map<string, Thread>()
   private retry = new Map<string, Retry>()
   private epoch = new AbortController()
+  private readonly lifetime = new AbortController()
   private voice?: AbortController
   private synchronizing = false
   private offset = 0
@@ -92,6 +100,7 @@ export class Session {
     this.render()
     void this.refresh()
     void this.refreshRoster()
+    if (!this.demo) void this.backfillAccountEmails()
   }
 
   async connect(key: string, speechKey?: string, signal?: AbortSignal) {
@@ -105,7 +114,7 @@ export class Session {
       const existing = this.accounts.find(account => account.id === profile.id)
       const bots = this.demo ? demos[profile.id].bots : accountBots(profile, existing?.bots ?? [])
       const account = {
-        ...profile, bots, botNames: profile.botNames ?? existing?.botNames,
+        ...profile, bots, email: profile.email ?? existing?.email, botNames: profile.botNames ?? existing?.botNames,
         key: key.trim(), speechKey: speechKey?.trim() || existing?.speechKey || '',
       }
       this.accounts = [...this.accounts.filter(item => item.id !== account.id), account]
@@ -194,7 +203,7 @@ export class Session {
       const current = this.active!
       const bots = accountBots(profile, current.bots)
       this.accounts = this.accounts.map(item => item === current ? {
-        ...item, name: profile.name, bots, botNames: profile.botNames ?? item.botNames,
+        ...item, name: profile.name, email: profile.email ?? item.email, bots, botNames: profile.botNames ?? item.botNames,
       } : item)
       this.save()
       if (this.botId && !bots.some(bot => bot.id === this.botId)) this.inbox()
@@ -205,6 +214,25 @@ export class Session {
       if (!signal.aborted && !this.onboarding) {
         this.accountStatus = errorText(error)
         this.render()
+      }
+    }
+  }
+
+  private async backfillAccountEmails() {
+    const signal = this.lifetime.signal
+    for (const account of this.accounts) {
+      if (signal.aborted) return
+      if (account.id === this.activeId || account.email) continue
+      try {
+        const profile = await this.client.profile(account.key, signal)
+        if (signal.aborted || profile.id !== account.id || !profile.email) continue
+        const current = this.accounts.find(item => item.id === account.id && item.key === account.key)
+        if (!current || current.email) continue
+        this.accounts = this.accounts.map(item => item === current ? { ...item, email: profile.email } : item)
+        this.save()
+        this.render()
+      } catch {
+        // An inactive account with an expired key keeps its existing label.
       }
     }
   }
@@ -392,7 +420,10 @@ export class Session {
     this.recording = false
   }
 
-  close() { this.resetRequests() }
+  close() {
+    this.lifetime.abort()
+    this.resetRequests()
+  }
 
   private target(): Target | undefined {
     const account = this.active
