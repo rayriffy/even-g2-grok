@@ -1,0 +1,9 @@
+**
+!Dockerfile
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!gateway/
+!gateway/*.ts
+!src/
+!src/client.ts

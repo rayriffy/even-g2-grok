@@ -1,161 +1,174 @@
-import {
-  waitForEvenAppBridge,
-  TextContainerProperty,
-  CreateStartUpPageContainer,
-  TextContainerUpgrade,
-  OsEventTypeList,
-} from '@evenrealities/even_hub_sdk'
-import { startSttStream } from './asr/stt'
-import { mountUi, setStatus, setTranscript } from './ui'
+import { AudioInputSource, OsEventTypeList, waitForEvenAppBridge } from '@evenrealities/even_hub_sdk'
+import { gatewayClient } from './client.ts'
+import { prepareCursorLogin } from './cursor-login.ts'
+import { demoClient } from './demo.ts'
+import { connectHud, eventType, glassFrame, MENU_ACCOUNTS, MENU_INBOX } from './hud.ts'
+import { Session, type AccountStorage, type StoredAccounts } from './session.ts'
+import { PushToTalk } from './voice.ts'
+import { mountUi } from './ui.ts'
+import './styles.css'
 
-mountUi()
+const origin = import.meta.env.VITE_GATEWAY_ORIGIN?.trim() ?? ''
+const demo = !origin
+const storageKey = 'bot-terminal-accounts-v1'
+let session: Session
+let hud: Awaited<ReturnType<typeof connectHud>> | undefined
+let voice: PushToTalk | undefined
+let target: { account: string; bot: string; source?: number } | undefined
 
-const API_KEY = import.meta.env.VITE_STT_API_KEY as string
-if (!API_KEY) {
-  setStatus('error', 'VITE_STT_API_KEY not set — copy .env.example to .env.local')
-  console.warn('VITE_STT_API_KEY is not set.')
+function cancelCapture() {
+  target = undefined
+  voice?.cancel()
+  session.cancelVoice()
 }
 
-const bridge = await waitForEvenAppBridge()
-
-const transcript = new TextContainerProperty({
-  xPosition: 0,
-  yPosition: 0,
-  width: 576,
-  height: 288,
-  borderWidth: 0,
-  borderColor: 5,
-  paddingLength: 4,
-  containerID: 1,
-  containerName: 'transcript',
-  content: 'Listening…',
-  isEventCapture: 1,
+const ui = mountUi(demo, {
+  connect: (key, signal) => { cancelCapture(); return session.connect(key, undefined, signal) },
+  prepareSignIn: () => prepareCursorLogin(origin),
+  saveSpeechKey: key => { cancelCapture(); session.saveSpeechKey(key) },
+  switchAccount: id => { cancelCapture(); session.activate(id) },
+  disconnect: id => { if (session.activeId === id) cancelCapture(); session.disconnect(id) },
+  link: name => session.link(name),
+  openBot: id => { cancelCapture(); session.openBot(id) },
+  inbox: () => { cancelCapture(); session.inbox() },
+  send: text => session.sendText(text),
 })
 
-const created = await bridge.createStartUpPageContainer(
-  new CreateStartUpPageContainer({ containerTotalNum: 1, textObject: [transcript] }),
-)
-if (created !== 0) {
-  setStatus('error', `createStartUpPageContainer failed: ${created}`)
-  console.error('Failed to create startup page')
+let bridge: Awaited<ReturnType<typeof waitForEvenAppBridge>> | undefined
+const storage: AccountStorage = {
+  async load() {
+    const data = bridge ? await bridge.getLocalStorage(storageKey) : demo ? localStorage.getItem(storageKey) : ''
+    if (!data) return undefined
+    const state = JSON.parse(data) as StoredAccounts
+    if (!Array.isArray(state.accounts) || typeof state.activeId !== 'string') throw new Error('Invalid stored accounts')
+    return state
+  },
+  async save(state) {
+    const data = JSON.stringify(state)
+    if (bridge) {
+      if (!await bridge.setLocalStorage(storageKey, data)) throw new Error('Phone storage failed')
+    } else if (demo) {
+      localStorage.setItem(storageKey, data)
+    }
+  },
 }
 
-let lastRender = ''
-let renderTimer: number | null = null
-let currentContent = 'Listening…'
-
-function scheduleGlassesRender() {
-  if (renderTimer !== null) return
-  renderTimer = window.setTimeout(async () => {
-    renderTimer = null
-    if (currentContent === lastRender) return
-    lastRender = currentContent
-    await bridge.textContainerUpgrade(
-      new TextContainerUpgrade({
-        containerID: 1,
-        containerName: 'transcript',
-        content: currentContent,
-      }),
-    )
-  }, 120) // debounce display writes — BLE render queue is slow
-}
-
-// The default stt.ts is a blank stub that throws. Catch the throw so the UI
-// surfaces the "configure stt.ts" error chip instead of hanging on "Connecting…".
-let stt: ReturnType<typeof startSttStream> | null = null
-try {
-  stt = startSttStream(
-    API_KEY,
-    ({ finalText, interimText }) => {
-      const combined = (finalText + interimText).trim()
-      // 240 chars is a rough fit for the 576x288 text container at default font.
-      currentContent = combined ? combined.slice(-240) : 'Listening…'
-      setTranscript(finalText, interimText)
-      scheduleGlassesRender()
-    },
-    err => {
-      setStatus('error', `STT error: ${(err as Error)?.message ?? err}`)
-      console.error('STT error:', err)
-    },
-  )
-} catch (err) {
-  setStatus('error', (err as Error)?.message ?? 'STT startup failed')
-  console.error('STT startup failed:', err)
-}
-
-let micOn = false
-if (stt) {
-  await bridge.audioControl(true)
-  micOn = true
-  setStatus('listening', 'Microphone live · tap to pause · double-tap to exit')
-}
-
-// Tap toggles capture. `audioControl(false)` stops the host pushing PCM, so no
-// further frames reach `sendPcm`; the STT client itself is left open. If your
-// provider closes an idle stream, tear it down here and reopen it on resume.
-// No-ops until stt.ts is wired up — there is no capture to pause.
-function toggleMic() {
-  if (!stt) return
-  micOn = !micOn
-  bridge.audioControl(micOn)
-  currentContent = micOn ? 'Listening…' : 'Paused'
-  scheduleGlassesRender()
-  setStatus(
-    micOn ? 'listening' : 'paused',
-    micOn ? 'Microphone live · tap to pause · double-tap to exit' : 'Paused · tap to resume · double-tap to exit',
-  )
-}
-
-let cleanedUp = false
-function cleanup() {
-  if (cleanedUp) return
-  cleanedUp = true
-  bridge.audioControl(false)
-  stt?.close()
-  unsubscribe()
-}
-
-// Reads the event type out of one envelope.
-//
-// CLICK_EVENT is 0, and protobuf omits zero-value fields on the wire, so a
-// single tap arrives as an envelope whose `eventType` is `undefined`. The
-// default has to be resolved INSIDE the envelope check. Writing
-// `event.sysEvent?.eventType ?? OsEventTypeList.CLICK_EVENT` instead would
-// read CLICK on events that carry no `sysEvent` at all — and in this template
-// that means every incoming audio frame would fire the tap handler.
-function eventTypeOf(envelope?: { eventType?: OsEventTypeList }): OsEventTypeList | null {
-  if (!envelope) return null
-  return envelope.eventType ?? OsEventTypeList.CLICK_EVENT
-}
-
-// Event routing, critical details:
-//   • Taps/double-taps/lifecycle come through `event.sysEvent`.
-//     Audio PCM frames come through `event.audioEvent` — separate branch.
-//   • Double-tap → `shutDownPageContainer(1)` is a root-level check: it
-//     must fire no matter which envelope the event arrives in, so users
-//     can always exit the app. System exit confirmation dialog appears;
-//     SYSTEM_EXIT_EVENT fires on confirm and we clean up there.
-//   • Check DOUBLE_CLICK_EVENT before CLICK_EVENT.
-const unsubscribe = bridge.onEvenHubEvent(event => {
-  const pcm = event.audioEvent?.audioPcm
-  if (pcm) stt?.sendPcm(pcm)
-
-  const sysType = eventTypeOf(event.sysEvent)
-  const textType = eventTypeOf(event.textEvent)
-
-  if (sysType === OsEventTypeList.DOUBLE_CLICK_EVENT || textType === OsEventTypeList.DOUBLE_CLICK_EVENT) {
-    bridge.shutDownPageContainer(1)
-    return
-  }
-
-  if (sysType === OsEventTypeList.CLICK_EVENT || textType === OsEventTypeList.CLICK_EVENT) {
-    toggleMic()
-    return
-  }
-
-  if (sysType === OsEventTypeList.SYSTEM_EXIT_EVENT || sysType === OsEventTypeList.ABNORMAL_EXIT_EVENT) {
-    cleanup()
-  }
+session = new Session(demo ? demoClient() : gatewayClient(origin), storage, demo, () => {
+  ui.render(session)
+  hud?.render(glassFrame(session).text)
 })
 
-window.addEventListener('beforeunload', cleanup)
+let closed = false
+let stopListening: (() => void) | undefined
+const tick = setInterval(() => {
+  if (!document.hidden || hud) void session.refresh()
+}, 4_000)
+function close() {
+  if (closed) return
+  closed = true
+  clearInterval(tick)
+  cancelCapture()
+  session.close()
+  ui.close()
+  stopListening?.()
+  hud?.close()
+}
+window.addEventListener('pagehide', event => { if (!event.persisted) close() })
+window.addEventListener('pageshow', () => { if (!closed) void session.refresh() })
+
+const ready = waitForEvenAppBridge()
+const bridgeOnLaunch = await Promise.race([
+  ready,
+  new Promise<undefined>(resolve => setTimeout(resolve, 1500, undefined)),
+])
+if (!closed) {
+  bridge = bridgeOnLaunch
+  await session.restore()
+}
+
+void ready.then(async connected => {
+  if (closed) return
+  if (!bridge) {
+    bridge = connected
+    await session.restore()
+  }
+  hud = await connectHud(connected, glassFrame(session).text, () => ui.connection('Glasses display unavailable'))
+  if (closed) { hud.close(); return }
+  ui.connection(demo ? 'G2 connected · Demo' : 'G2 connected')
+  voice = new PushToTalk(
+    async enabled => {
+      if (enabled) return connected.audioControl(true, AudioInputSource.Glasses)
+      const stopped = await connected.audioControl(false)
+      // Simulator 0.9.5 returns the disabled state even when capture stopped.
+      return stopped || demo
+    },
+    wav => {
+      const captured = target
+      target = undefined
+      if (captured?.account === session.activeId && captured.bot === session.currentBot?.id) {
+        void session.processAudio(wav)
+      }
+    },
+    message => {
+      if (!target) return
+      target = undefined
+      session.microphone(message)
+    },
+  )
+
+  const events = connected.onEvenHubEvent(event => {
+    if (event.audioEvent?.audioPcm) voice?.audio(event.audioEvent.audioPcm)
+    const action = event.menuItemClickEvent?.itemID
+    if (action === MENU_ACCOUNTS || action === MENU_INBOX) {
+      cancelCapture()
+      if (action === MENU_ACCOUNTS) session.accountPicker()
+      else session.inbox()
+      return
+    }
+    const type = eventType(event)
+    if (type === OsEventTypeList.SYSTEM_EXIT_EVENT || type === OsEventTypeList.ABNORMAL_EXIT_EVENT) {
+      close()
+      return
+    }
+    if (type === OsEventTypeList.FOREGROUND_ENTER_EVENT && target) {
+      cancelCapture()
+      session.microphone('')
+      return
+    }
+    if (type === OsEventTypeList.DOUBLE_CLICK_EVENT) {
+      cancelCapture()
+      if (session.view === 'inbox') void connected.shutDownPageContainer(1).catch(() => ui.connection('Could not close glasses display'))
+      else session.inbox()
+      return
+    }
+    if (type === OsEventTypeList.LONG_PRESS_EVENT) {
+      const bot = session.currentBot
+      if (!bot || session.working || target) return
+      if (!session.voiceAvailable) {
+        session.microphone('Connect your account on the phone.')
+        return
+      }
+      target = { account: session.activeId, bot: bot.id, source: event.sysEvent?.eventSource }
+      session.microphone('Listening…  Release to send', true)
+      voice?.press()
+      return
+    }
+    if (type === OsEventTypeList.LONG_PRESS_RELEASE_EVENT) {
+      const source = event.sysEvent?.eventSource
+      if (target && (!source || !target.source || target.source === source)) void voice?.release()
+      return
+    }
+    if (target) return
+    if (type === OsEventTypeList.CLICK_EVENT) session.select()
+    else if (type === OsEventTypeList.SCROLL_TOP_EVENT || type === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
+      session.scroll(type === OsEventTypeList.SCROLL_TOP_EVENT ? -1 : 1, glassFrame(session).pages)
+    }
+  })
+  const status = connected.onDeviceStatusChanged(device => {
+    if (!device.isConnected() && target) {
+      cancelCapture()
+      session.microphone('Glasses disconnected.')
+    }
+  })
+  stopListening = () => { events(); status() }
+}).catch(() => ui.connection('Glasses display unavailable'))

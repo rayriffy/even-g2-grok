@@ -1,5 +1,5 @@
 {
-  "name": "evenhub-asr",
+  "name": "even-g2-grok",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -14,11 +14,15 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "pack": "npm run build && evenhub pack app.json dist",
-    "simulate": "evenhub-simulator http://localhost:5173"
+    "simulate": "evenhub-simulator http://localhost:5173",
+    "pack:demo": "node scripts/pack.mjs --demo",
+    "test": "node --test tests/*.test.ts",
+    "gateway": "bun gateway/index.ts",
+    "pack:live": "node scripts/pack.mjs"
   },
   "dependencies": {
-    "@evenrealities/even_hub_sdk": "^0.0.16"
+    "@evenrealities/even_hub_sdk": "^0.0.16",
+    "hono": "4.13.19"
   },
   "devDependencies": {
     "@evenrealities/evenhub-cli": "^0.2.0",

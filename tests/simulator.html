@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bot Terminal Simulator Fixture</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk'
+    import { demos } from '../src/demo.ts'
+    const bridge = await waitForEvenAppBridge()
+    // Stable disposable account fixtures. Keep the simulator's app storage intact.
+    let stored = JSON.stringify({
+      activeId: 'studio',
+      accounts: Object.entries(demos).map(([key, profile]) => ({ ...profile, key, speechKey: '' })),
+    })
+    bridge.getLocalStorage = async () => stored
+    bridge.setLocalStorage = async (_key, value) => { stored = value; return true }
+    const audioControl = bridge.audioControl.bind(bridge)
+    bridge.audioControl = async (...args) => {
+      const accepted = await audioControl(...args)
+      console.info('Fixture microphone:', { enabled: args[0], accepted })
+      return accepted
+    }
+    await import('../src/main.ts')
+  </script>
+</body>
+</html>
