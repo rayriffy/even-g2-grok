@@ -5,12 +5,16 @@ import { prepareCursorLogin } from '../src/cursor-login.ts'
 import { gatewayClient } from '../src/client.ts'
 import { Session, type StoredAccounts } from '../src/session.ts'
 
-const origin = 'https://gateway.invalid'
+const gatewayBase = 'https://gateway.invalid/grokbot-gateway'
 const token = 'synthetic-access-token'
 const key = 'synthetic-cursor-api-key'
 
 function fakeBrowser(app: ReturnType<typeof createGateway>) {
-  return ((url, init) => app.fetch(new Request(url, init))) as typeof fetch
+  return ((url, init) => {
+    const incoming = new Request(url, init)
+    assert.ok(incoming.url.startsWith(gatewayBase + '/'))
+    return app.fetch(new Request('https://gateway.invalid' + incoming.url.slice(gatewayBase.length), incoming))
+  }) as typeof fetch
 }
 
 test('browser login sends a PKCE challenge, polls statelessly, then stores only the minted key', async () => {
@@ -64,7 +68,7 @@ test('browser login sends a PKCE challenge, polls statelessly, then stores only 
   })
 
   const fetchClient = fakeBrowser(app)
-  const handoff = await prepareCursorLogin(origin, fetchClient)
+  const handoff = await prepareCursorLogin(gatewayBase, fetchClient)
   const portal = new URL(handoff.url)
   assert.equal(portal.origin, 'https://cursor.com')
   assert.equal(portal.pathname, '/loginDeepControl')
@@ -78,7 +82,7 @@ test('browser login sends a PKCE challenge, polls statelessly, then stores only 
   assert.equal(minted, true)
 
   let stored: StoredAccounts | undefined
-  const session = new Session(gatewayClient(origin, fetchClient), {
+  const session = new Session(gatewayClient(gatewayBase, fetchClient), {
     async load() { return stored },
     async save(state) { stored = state },
   }, false, () => {})
@@ -105,7 +109,7 @@ test('a failed upstream login never exposes provider response bodies or uses a G
   const invalid = await app.request('/auth/cursor/poll', { method: 'POST', body: '{"uuid":"invalid","verifier":"bogus"}' })
   assert.equal(invalid.status, 400)
   assert.equal(requests.length, 0)
-  const handoff = await prepareCursorLogin(origin, fakeBrowser(app))
+  const handoff = await prepareCursorLogin(gatewayBase, fakeBrowser(app))
   await assert.rejects(handoff.wait(new AbortController().signal), /Cursor sign-in is unavailable/)
   assert.equal(requests.length, 1)
   assert.equal(requests[0].method, 'POST')
@@ -114,7 +118,7 @@ test('a failed upstream login never exposes provider response bodies or uses a G
 
 test('cancelled sign-in stops before sending the first poll', async () => {
   let requests = 0
-  const handoff = await prepareCursorLogin(origin, async () => {
+  const handoff = await prepareCursorLogin(gatewayBase, async () => {
     requests++
     return Response.json({ status: 'pending' })
   })
@@ -127,7 +131,7 @@ test('cancelled sign-in stops before sending the first poll', async () => {
 test('cancelling while the account profile loads leaves the previous account in place', async () => {
   let finishProfile!: (value: Response) => void
   const loadingProfile = new Promise<Response>(resolve => { finishProfile = resolve })
-  const client = gatewayClient(origin, async () => loadingProfile)
+  const client = gatewayClient(gatewayBase, async () => loadingProfile)
   const account = { id: '1', name: 'Existing', key: 'existing-account-key', speechKey: '', bots: [] }
   const saved: StoredAccounts = { accounts: [account], activeId: account.id }
   let saves = 0

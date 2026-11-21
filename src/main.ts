@@ -8,8 +8,9 @@ import { PushToTalk } from './voice.ts'
 import { mountUi } from './ui.ts'
 import './styles.css'
 
-const origin = import.meta.env.VITE_GATEWAY_ORIGIN?.trim() ?? ''
-const demo = !origin
+const gatewayBase = (import.meta.env.VITE_GATEWAY_BASE_URL ?? import.meta.env.VITE_GATEWAY_ORIGIN ?? '')
+  .trim().replace(/\/+$/, '')
+const demo = !gatewayBase
 const storageKey = 'bot-terminal-accounts-v1'
 let session: Session
 let hud: Awaited<ReturnType<typeof connectHud>> | undefined
@@ -24,7 +25,7 @@ function cancelCapture() {
 
 const ui = mountUi(demo, {
   connect: (key, signal) => { cancelCapture(); return session.connect(key, undefined, signal) },
-  prepareSignIn: () => prepareCursorLogin(origin),
+  prepareSignIn: () => prepareCursorLogin(gatewayBase),
   saveSpeechKey: key => { cancelCapture(); session.saveSpeechKey(key) },
   switchAccount: id => { cancelCapture(); session.activate(id) },
   disconnect: id => { if (session.activeId === id) cancelCapture(); session.disconnect(id) },
@@ -53,7 +54,7 @@ const storage: AccountStorage = {
   },
 }
 
-session = new Session(demo ? demoClient() : gatewayClient(origin), storage, demo, () => {
+session = new Session(demo ? demoClient() : gatewayClient(gatewayBase), storage, demo, () => {
   ui.render(session)
   hud?.render(glassFrame(session).text)
 })

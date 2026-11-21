@@ -10,15 +10,15 @@ Requires Node.js 24, pnpm 12, and Even App 2.2.10 or later.
 
 The [gateway workflow](.github/workflows/gateway.yml) publishes `ghcr.io/rayriffy/grokbot-gateway` and deploys the tested image digest as `grokbot-gateway` in `gke.cluster-rcf2`. It runs on pushes to `main` and can also be run manually.
 
-Set `DEPLOYS_AUTH_USER` and `DEPLOYS_AUTH_PASS` as repository secrets. Deployment defaults to the `rayriffy` project. Set the repository variable `DEPLOYS_PROJECT` to target a different project. For a private GHCR package, set `DEPLOYS_PULL_SECRET` to the Deploys.app pull secret name with read access to the image. The workflow summary includes the HTTPS origin when Deploys.app returns one.
+Set `DEPLOYS_AUTH_USER` and `DEPLOYS_AUTH_PASS` as repository secrets. Deployment defaults to the `rayriffy` project. For a private GHCR package, set `DEPLOYS_PULL_SECRET` to the Deploys.app pull secret name with read access to the image. CI checks the live route at `https://api.rayriffy.com/grokbot-gateway/ping`. Set `DEPLOYS_GATEWAY_BASE_URL` to check a different route and `DEPLOYS_PROJECT` to deploy into a different project.
 
 ### Other hosts and packaging
 
 1. Run `pnpm install --frozen-lockfile`.
 2. For a container host, build the [Dockerfile](Dockerfile) and expose port 3000 over HTTPS. Cloudflare Workers can deploy with `pnpm dlx wrangler deploy --config gateway/wrangler.toml`. Bun can serve the same export with `pnpm gateway`. Other hosts can mount the [gateway Fetch handler](gateway/index.ts) using their [Hono adapter](https://hono.dev/docs/getting-started/basic).
 3. Check `https://YOUR-GATEWAY/ping` returns `pong`.
-4. Run `VITE_GATEWAY_ORIGIN=https://YOUR-GATEWAY pnpm pack:live`. The packer adds this exact origin to the EvenHub network whitelist and writes `artifacts/bot-terminal.ehpk`.
-5. Upload the package in the EvenHub portal and install it through the Even app. Repack if the gateway origin changes.
+4. Run `VITE_GATEWAY_BASE_URL=https://api.rayriffy.com/grokbot-gateway pnpm pack:live`, substituting your own base URL if needed. The app keeps the path prefix in its requests, and the manifest whitelists the URL's origin. The output is `artifacts/bot-terminal.ehpk`.
+5. Upload the package in the EvenHub portal and install it through the Even app. Repack when the gateway base URL changes.
 
 The gateway takes no credential environment variables and uses no database, cookies, or credential logging. The phone generates a one-time sign-in verifier and stores each account's keys in EvenHub app-scoped local storage. The gateway uses short-lived Cursor tokens for key creation and Grok Bot calls within individual requests. It forwards credentials only to Cursor or xAI. Run it on a trusted host with request-header and body capture disabled.
 

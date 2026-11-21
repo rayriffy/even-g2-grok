@@ -25,7 +25,7 @@ function pause(milliseconds: number, signal: AbortSignal): Promise<void> {
 }
 
 export async function prepareCursorLogin(
-  origin: string,
+  baseUrl: string,
   fetchRequest: typeof fetch = fetch,
 ): Promise<CursorLogin> {
   const uuid = crypto.randomUUID()
@@ -43,7 +43,7 @@ export async function prepareCursorLogin(
       let delay = 1000
       try {
         while (!pollSignal.aborted) {
-          const response = await fetchRequest(origin + '/auth/cursor/poll', {
+          const response = await fetchRequest(baseUrl + '/auth/cursor/poll', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             cache: 'no-store',

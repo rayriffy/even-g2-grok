@@ -7,15 +7,17 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const demo = process.argv.includes('--demo')
-const origin = process.env.VITE_GATEWAY_ORIGIN?.trim() ?? ''
-let gateway = ''
+const configuredGateway = (process.env.VITE_GATEWAY_BASE_URL ?? process.env.VITE_GATEWAY_ORIGIN ?? '').trim()
+let gatewayBase = ''
+let gatewayOrigin = ''
 if (!demo) {
   try {
-    const url = new URL(origin)
-    if (url.protocol !== 'https:' || origin !== url.origin) throw new Error()
-    gateway = url.origin
+    const url = new URL(configuredGateway)
+    if (url.protocol !== 'https:' || url.username || url.password || /[?#]/.test(url.href)) throw new Error()
+    gatewayBase = url.href.replace(/\/+$/, '')
+    gatewayOrigin = url.origin
   } catch {
-    console.error('Set VITE_GATEWAY_ORIGIN to the deployed HTTPS origin, without a path or trailing slash.')
+    console.error('Set VITE_GATEWAY_BASE_URL to the deployed HTTPS base URL, without credentials, query, or fragment.')
     process.exit(1)
   }
 }
@@ -25,7 +27,7 @@ const temp = await mkdtemp(join(tmpdir(), 'bot-terminal-pack-'))
 const manifestPath = join(temp, 'app.json')
 const dist = join(temp, 'dist')
 const archive = join(temp, 'bot-terminal.ehpk')
-const env = { ...process.env, VITE_GATEWAY_ORIGIN: gateway }
+const env = { ...process.env, VITE_GATEWAY_BASE_URL: gatewayBase }
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 
 function run(args, capture = false) {
@@ -46,7 +48,7 @@ try {
     manifest.permissions.push({
       name: 'network',
       desc: 'Connect to your Grok Bots and transcribe your push-to-talk audio through your gateway.',
-      whitelist: [gateway],
+      whitelist: [gatewayOrigin],
     })
   }
   await writeFile(manifestPath, JSON.stringify(manifest))
@@ -57,7 +59,7 @@ try {
   assert.ok(assets.some(name => name.endsWith('.css')))
   const script = assets.find(name => name.endsWith('.js'))
   assert.ok(script && index.includes('./assets/' + script))
-  if (!demo) assert.ok((await readFile(join(dist, 'assets', script), 'utf8')).includes(gateway))
+  if (!demo) assert.ok((await readFile(join(dist, 'assets', script), 'utf8')).includes(gatewayBase))
   const result = JSON.parse(run(['exec', 'evenhub', 'pack', manifestPath, dist, '--sdk-ver', manifest.min_sdk_version, '--json', '-o', archive], true))
   const bytes = await readFile(archive)
   assert.equal(bytes.subarray(0, 4).toString('ascii'), 'EHPK')

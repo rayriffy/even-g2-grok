@@ -15,13 +15,13 @@ export interface BotClient {
   transcribe(token: string, wav: Blob, signal: AbortSignal, provider?: 'cursor' | 'xai'): Promise<string>
 }
 
-export function gatewayClient(origin: string, fetchRequest: typeof fetch = fetch): BotClient {
+export function gatewayClient(baseUrl: string, fetchRequest: typeof fetch = fetch): BotClient {
   async function request<T>(path: string, token: string, options: RequestInit = {}): Promise<T> {
     const headers = new Headers(options.headers)
     headers.set('Authorization', `Bearer ${token}`)
     let response: Response
     try {
-      response = await fetchRequest(origin + path, {
+      response = await fetchRequest(baseUrl + path, {
         ...options, headers, cache: 'no-store', credentials: 'omit', redirect: 'error',
         signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(65_000)]) : AbortSignal.timeout(38_000),
       })
