@@ -29,7 +29,7 @@ test('first run, two-line previews, conversations, account switching and restore
   }, true, () => {})
   assert.equal(glassFrame(original).title, '>_  Grok Bot')
   assert.equal(glassFrame(original).status, 'Connect an account')
-  await original.connect('studio', '')
+  await original.connect('studio')
   await setImmediate()
   const inbox = glassFrame(original).body.split('\n')
   assert.match(inbox[0], /^> Scout$/)
@@ -47,7 +47,7 @@ test('first run, two-line previews, conversations, account switching and restore
   assert.equal(glassFrame(original).status, 'Recording…')
   assert.equal(glassFrame(original).hint, 'Release to send')
   assert.doesNotMatch(glassFrame(original).body, /Release to send/)
-  await original.connect('personal', '')
+  await original.connect('personal')
   await setImmediate()
   original.accountPicker()
   original.scroll(-1, 0)
@@ -65,7 +65,7 @@ test('first run, two-line previews, conversations, account switching and restore
 
 test('G2 strips bot Markdown before measuring the transcript and the two-line preview', async () => {
   const { session } = fixture()
-  await session.connect('studio', '')
+  await session.connect('studio')
   session.openBot('scout')
   assert.equal(await session.sendText('Keep my **literal** text.'), true)
   await setImmediate()
@@ -94,7 +94,7 @@ test('saved accounts fill in their emails and display one measured line each', a
   const email = 'example-' + 'very-long-address-'.repeat(8) + '@example.test'
   let saved: StoredAccounts = {
     activeId: 'studio',
-    accounts: ['studio', 'personal'].map(id => ({ id, key: id, name: 'Same name', speechKey: '', bots: [] })),
+    accounts: ['studio', 'personal'].map(id => ({ id, key: id, name: 'Same name', bots: [] })),
   }
   const session = new Session({
     ...demoClient(),
@@ -120,7 +120,7 @@ test('saved accounts fill in their emails and display one measured line each', a
 test('inbox swipes keep the visible bots until the selection reaches an edge', async () => {
   const bots = ['One', 'Two', 'Three', 'Four'].map(name => ({ id: name, name }))
   const session = new Session(demoClient(), {
-    async load() { return { accounts: [{ id: 'studio', name: 'Studio', bots, key: 'studio', speechKey: '' }], activeId: 'studio' } },
+    async load() { return { accounts: [{ id: 'studio', name: 'Studio', bots, key: 'studio' }], activeId: 'studio' } },
     async save() {},
   }, true, () => {})
   await session.restore()
@@ -187,7 +187,7 @@ test('a long incoming reply keeps the same G2 page selected and the open chat re
       }))
     },
   })
-  await session.connect('studio', '')
+  await session.connect('studio')
   await setImmediate()
   session.select()
   await setImmediate()
@@ -207,7 +207,7 @@ test('a long incoming reply keeps the same G2 page selected and the open chat re
 
 test('hold captures bytes, release closes microphone then submits exactly one transcript', async () => {
   const { session } = fixture()
-  await session.connect('studio', '')
+  await session.connect('studio')
   session.select()
   const toggles: boolean[] = []
   let done: Promise<void> | undefined
@@ -239,8 +239,8 @@ test('a delayed transcript read cannot repopulate an account after switching', a
   let resolve!: (result: ReadResult[]) => void
   const wait = new Promise<ReadResult[]>(done => { resolve = done })
   const { session } = fixture({ ...demo, read: (key, ...args) => key === 'studio' ? wait : demo.read(key, ...args) })
-  await session.connect('studio', '')
-  await session.connect('personal', '')
+  await session.connect('studio')
+  await session.connect('personal')
   resolve([{ id: 'scout', transcript: { messages: [{ id: '1', role: 'bot', text: 'Private studio data', at: 1 }], cursor: '1', busy: false } }])
   await setImmediate()
   assert.equal(session.activeId, 'personal')
@@ -256,7 +256,7 @@ test('an ambiguous delivery reuses its message ID when the same draft is retried
     if (ids.length === 1) throw new Error('Timeout after delivery')
     await demo.send(...args)
   } })
-  await session.connect('studio', '')
+  await session.connect('studio')
   session.select()
   assert.equal(await session.sendText('Hello'), false)
   assert.equal(await session.sendText('Hello'), true)
@@ -273,7 +273,7 @@ test('the HTTP LAN preview can send a valid v4 message ID without randomUUID', a
       ids.push(args[3])
       await demo.send(...args)
     } })
-    await session.connect('studio', '')
+    await session.connect('studio')
     session.select()
     assert.equal(await session.sendText('LAN demo'), true)
     assert.equal(ids.length, 1)

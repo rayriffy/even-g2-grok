@@ -3,7 +3,7 @@ import type { AccountProfile, Bot, BotClient, Message, Profile } from './client.
 import { demos } from './demo.ts'
 import { ACCOUNT_ROWS, followPage, INBOX_ROWS } from './hud-text.ts'
 
-export interface Account extends Profile { key: string; speechKey: string }
+export interface Account extends Profile { key: string }
 export interface StoredAccounts { accounts: Account[]; activeId: string }
 export interface AccountStorage {
   load(): Promise<StoredAccounts | undefined>
@@ -93,8 +93,16 @@ export class Session {
   async restore() {
     try {
       const stored = await this.storage.load()
-      this.accounts = stored?.accounts ?? []
+      let removedSpeechKey = false
+      this.accounts = (stored?.accounts ?? []).map(account => {
+        if (!Object.hasOwn(account, 'speechKey')) return account
+        const restored: Account & { speechKey?: unknown } = { ...account }
+        delete restored.speechKey
+        removedSpeechKey = true
+        return restored
+      })
       this.activeId = this.accounts.find(account => account.id === stored?.activeId)?.id ?? this.accounts[0]?.id ?? ''
+      if (removedSpeechKey) this.save()
     } catch {
       this.accountStatus = 'Could not load accounts from this phone.'
     }
@@ -104,7 +112,7 @@ export class Session {
     if (!this.demo) void this.backfillAccountEmails()
   }
 
-  async connect(key: string, speechKey?: string, signal?: AbortSignal) {
+  async connect(key: string, signal?: AbortSignal) {
     if (this.onboarding) return false
     this.onboarding = true
     this.accountStatus = 'Connecting account…'
@@ -116,7 +124,7 @@ export class Session {
       const bots = this.demo ? demos[profile.id].bots : accountBots(profile, existing?.bots ?? [])
       const account = {
         ...profile, bots, email: profile.email ?? existing?.email, botNames: profile.botNames ?? existing?.botNames,
-        key: key.trim(), speechKey: speechKey?.trim() || existing?.speechKey || '',
+        key: key.trim(),
       }
       this.accounts = [...this.accounts.filter(item => item.id !== account.id), account]
       this.activate(account.id, true)
@@ -128,17 +136,6 @@ export class Session {
       this.onboarding = false
       this.render()
     }
-  }
-
-  saveSpeechKey(key: string) {
-    const account = this.active
-    if (!account) return
-    this.cancelVoice()
-    const speechKey = key.trim()
-    this.accounts = this.accounts.map(item => item.id === account.id ? { ...item, speechKey } : item)
-    this.save()
-    this.accountStatus = speechKey ? 'Voice key saved on this phone.' : 'Voice key removed from this phone.'
-    this.render()
   }
 
   activate(id: string, force = false) {
@@ -318,7 +315,7 @@ export class Session {
 
   beginSpeech() {
     const account = this.active
-    if (account && !account.speechKey) return this.client.streamSpeech?.(account.key, this.epoch.signal)
+    if (account) return this.client.streamSpeech?.(account.key, this.epoch.signal)
   }
 
   async processAudio(wav: Blob | undefined, stream?: SpeechCapture) {
@@ -337,9 +334,8 @@ export class Session {
     this.working = true
     this.microphone('Transcribing…')
     try {
-      const speechKey = target.account.speechKey
       const transcript = stream ? await stream.finish(signal)
-        : await this.client.transcribe(speechKey || target.account.key, wav, signal, speechKey ? 'xai' : 'cursor')
+        : await this.client.transcribe(target.account.key, wav, signal)
       const text = transcript.trim()
       if (signal.aborted) return
       if (!text) this.microphone('No speech heard. Try again.')

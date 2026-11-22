@@ -16,7 +16,7 @@ test('ping returns plain-text pong without contacting a provider', async () => {
   assert.equal(await response.text(), 'pong')
 })
 
-test('phone client traverses the Hono API using separate credentials and the shipped BDK contract', async () => {
+test('phone chat and legacy speech use separate credentials through Hono', async () => {
   const destinations: string[] = []
   const app = createGateway(async (input, init) => {
     const request = new Request(input, init)
@@ -91,7 +91,13 @@ test('phone client traverses the Hono API using separate credentials and the shi
   assert.deepEqual(bot, { id: '123', name: 'Scout' })
   const recording = new Recording()
   recording.push(new Uint8Array(4_800))
-  const text = await phone.transcribe(speechKey, recording.finish()!, new AbortController().signal)
+  const transcription = await app.request('/transcribe', {
+    method: 'POST', body: recording.finish(), headers: {
+      Authorization: 'Bearer ' + speechKey, 'Content-Type': 'audio/wav',
+    },
+  })
+  assert.equal(transcription.status, 200)
+  const { text } = await transcription.json() as { text: string }
   assert.equal(text, 'A quick summary.')
   await phone.send(cursorKey, bot, text, messageId, new AbortController().signal)
   const result = await phone.read(cursorKey, [{ bot, cursor: '-1' }], new AbortController().signal)

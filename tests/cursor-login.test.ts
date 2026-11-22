@@ -91,11 +91,8 @@ test('browser login sends a PKCE challenge, polls statelessly, then stores only 
   assert.equal(stored?.activeId, '19')
   assert.deepEqual(stored?.accounts[0].botNames, ['Scout'])
   assert.doesNotMatch(JSON.stringify(stored), /synthetic-access-token|synthetic-unused-refresh-token/)
-  session.saveSpeechKey('test-voice-key')
-  assert.equal(session.active?.speechKey, 'test-voice-key')
   assert.equal(await session.connect(loggedIn), true)
-  assert.equal(session.active?.speechKey, 'test-voice-key')
-  session.saveSpeechKey('')
+  assert.equal(session.accounts.length, 1)
   assert.equal(session.voiceAvailable, true)
 })
 
@@ -132,7 +129,7 @@ test('cancelling while the account profile loads leaves the previous account in 
   let finishProfile!: (value: Response) => void
   const loadingProfile = new Promise<Response>(resolve => { finishProfile = resolve })
   const client = gatewayClient(gatewayBase, async () => loadingProfile)
-  const account = { id: '1', name: 'Existing', key: 'existing-account-key', speechKey: '', bots: [] }
+  const account = { id: '1', name: 'Existing', key: 'existing-account-key', bots: [] }
   const saved: StoredAccounts = { accounts: [account], activeId: account.id }
   let saves = 0
   const session = new Session(client, {
@@ -141,7 +138,7 @@ test('cancelling while the account profile loads leaves the previous account in 
   }, false, () => {})
   await session.restore()
   const controller = new AbortController()
-  const connecting = session.connect(key, undefined, controller.signal)
+  const connecting = session.connect(key, controller.signal)
   controller.abort()
   finishProfile(Response.json({ id: '19', name: 'New account' }))
   assert.equal(await connecting, false)

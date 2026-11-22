@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createGateway } from '../gateway/index.ts'
 import { gatewayClient } from '../src/client.ts'
-import { Session } from '../src/session.ts'
+import { Session, type StoredAccounts } from '../src/session.ts'
 import { PushToTalk } from '../src/voice.ts'
 
 const sdkKey = 'fixture-stream-sdk-key'
@@ -73,17 +73,28 @@ function fixture(authorized: boolean) {
   }
 }
 
-test('hold streams audio through the stateless gateway and release sends one finalized message', { timeout: 2000 }, async () => {
+test('restored accounts drop old voice keys and hold-to-talk sends one Cursor transcript', { timeout: 2000 }, async () => {
   const stream = fixture(true)
   const sends: string[] = []
+  const owner = { id: 'owner', name: 'Owner', email: 'owner@example.test', key: sdkKey, bots: [{ id: 'bot', name: 'Bot' }] }
+  const second = { id: 'second', name: 'Second', email: 'second@example.test', key: 'fixture-second-sdk-key', bots: [] }
+  const expected: StoredAccounts = { activeId: owner.id, accounts: [owner, second] }
+  const legacy = { ...owner, speechKey: 'fixture-obsolete-xai-key' }
+  const legacySecond = { ...second, speechKey: '' }
+  let stored: StoredAccounts = { activeId: owner.id, accounts: [legacy, legacySecond] }
   const session = new Session({
     ...stream.client,
-    async profile() { return { id: 'owner', name: 'Owner', bots: [{ id: 'bot', name: 'Bot' }] } },
+    async profile() { throw new Error('Fixture profile unavailable') },
     async read() { return [] },
     async send(_key, _bot, text) { sends.push(text) },
     async transcribe() { assert.fail('Streaming sent a batch request') },
-  }, { async load() {}, async save() {} }, false, () => {})
-  assert.equal(await session.connect(sdkKey), true)
+  }, {
+    async load() { return stored },
+    async save(snapshot) { stored = snapshot },
+  }, false, () => {})
+  await session.restore()
+  assert.deepEqual(session.accounts, expected.accounts)
+  assert.deepEqual(stored, expected)
   session.select()
   const capture = session.beginSpeech()!
   let delivery: Promise<void> | undefined

@@ -26,9 +26,8 @@ function cancelCapture() {
 }
 
 const ui = mountUi(demo, {
-  connect: (key, signal) => { cancelCapture(); return session.connect(key, undefined, signal) },
+  connect: (key, signal) => { cancelCapture(); return session.connect(key, signal) },
   prepareSignIn: () => prepareCursorLogin(gatewayBase),
-  saveSpeechKey: key => { cancelCapture(); session.saveSpeechKey(key) },
   switchAccount: id => { cancelCapture(); session.activate(id) },
   disconnect: id => { if (session.activeId === id) cancelCapture(); session.disconnect(id) },
   link: name => session.link(name),

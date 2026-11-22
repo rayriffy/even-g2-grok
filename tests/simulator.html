@@ -14,7 +14,7 @@
     // Stable disposable account fixtures. Keep the simulator's app storage intact.
     let stored = JSON.stringify({
       activeId: 'studio',
-      accounts: Object.entries(demos).map(([key, profile]) => ({ ...profile, key, speechKey: '' })),
+      accounts: Object.entries(demos).map(([key, profile]) => ({ ...profile, key })),
     })
     bridge.getLocalStorage = async () => stored
     bridge.setLocalStorage = async (_key, value) => { stored = value; return true }

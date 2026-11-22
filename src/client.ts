@@ -14,7 +14,7 @@ export interface BotClient {
   link(token: string, name: string): Promise<Bot>
   read(token: string, targets: readonly ReadTarget[], signal: AbortSignal): Promise<ReadResult[]>
   send(token: string, bot: Bot, text: string, messageId: string, signal: AbortSignal): Promise<void>
-  transcribe(token: string, wav: Blob, signal: AbortSignal, provider?: 'cursor' | 'xai'): Promise<string>
+  transcribe(token: string, wav: Blob, signal: AbortSignal): Promise<string>
   streamSpeech?(token: string, signal: AbortSignal): SpeechCapture
 }
 
@@ -75,8 +75,8 @@ export function gatewayClient(baseUrl: string, fetchRequest: typeof fetch = fetc
       if (bot.chat) await post('/conversations/send', token, { chat: bot.chat, text, messageId }, signal)
       else await post(`/bots/${encodeURIComponent(bot.id)}`, token, { text, messageId }, signal)
     },
-    async transcribe(token, wav, signal, provider = 'xai') {
-      const result = await request<{ text: string }>(provider === 'cursor' ? '/transcribe/cursor' : '/transcribe', token, {
+    async transcribe(token, wav, signal) {
+      const result = await request<{ text: string }>('/transcribe/cursor', token, {
         method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: wav, signal,
       })
       return result.text
