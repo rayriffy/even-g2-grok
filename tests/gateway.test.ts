@@ -23,6 +23,11 @@ test('phone client traverses the Hono API using separate credentials and the shi
     const url = new URL(request.url)
     destinations.push(url.pathname)
     assert.equal(request.redirect, 'manual')
+    assert.equal(request.headers.has('User-Agent'), false)
+    const legacyBot = url.host === 'api.cursor.com' && url.pathname.startsWith('/v0/grokbot/')
+    assert.equal(request.headers.get('x-cursor-client-type'), legacyBot ? 'agent-serve' : null)
+    if (legacyBot) assert.match(request.headers.get('x-request-id') ?? '', /^[a-f0-9-]{36}$/)
+    else assert.equal(request.headers.has('x-request-id'), false)
     if (url.host === 'api.x.ai') {
       assert.equal(request.headers.get('Authorization'), 'Bearer ' + speechKey)
       const form = await request.formData()
@@ -57,7 +62,6 @@ test('phone client traverses the Hono API using separate credentials and the shi
     }
     assert.equal(url.host, 'api.cursor.com')
     assert.equal(key, 'Bearer ' + cursorKey)
-    assert.equal(request.headers.get('x-cursor-client-type'), 'agent-serve')
     if (url.pathname === '/v0/grokbot/sessions') {
       assert.deepEqual(await request.json(), { name: 'Scout' })
       return Response.json({ id: '123', name: 'Scout', latestUpdatedSeq: '0' })

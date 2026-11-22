@@ -27,6 +27,9 @@ function fixture(authorized: boolean) {
   const upstream = createGateway(async (input, init) => {
     const request = new Request(input, init)
     assert.equal(request.redirect, 'manual')
+    assert.equal(request.headers.has('User-Agent'), false)
+    assert.equal(request.headers.has('x-cursor-client-type'), false)
+    assert.equal(request.headers.has('x-request-id'), false)
     const url = new URL(request.url)
     assert.equal(url.origin, 'https://api2.cursor.sh')
     if (url.pathname === '/auth/exchange_user_api_key') {

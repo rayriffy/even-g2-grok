@@ -58,7 +58,11 @@ export function createGateway(fetchUpstream: typeof fetch = fetch) {
 
   async function upstream(
     request: Request, destination: string, body?: BodyInit,
-    { cursor = true, sessionToken }: { cursor?: boolean; sessionToken?: string } = {},
+    { cursor = true, sessionToken, legacyBot = false }: {
+      cursor?: boolean
+      sessionToken?: string
+      legacyBot?: boolean
+    } = {},
   ) {
     const authorization = request.headers.get('Authorization')
     if (!authorization || !/^Bearer [!-~]{12,512}$/.test(authorization)) {
@@ -67,7 +71,7 @@ export function createGateway(fetchUpstream: typeof fetch = fetch) {
     const headers = new Headers({ Authorization: sessionToken ? `Bearer ${sessionToken}` : authorization, Accept: 'application/json' })
     if (cursor && body) headers.set('Content-Type', 'application/json')
     if (sessionToken) headers.set('Connect-Protocol-Version', '1')
-    if (cursor && destination.startsWith(CURSOR + '/v0/grokbot/')) {
+    if (legacyBot) {
       headers.set('x-cursor-client-type', 'agent-serve')
       headers.set('x-request-id', crypto.randomUUID())
     }
@@ -165,7 +169,8 @@ export function createGateway(fetchUpstream: typeof fetch = fetch) {
     if (typeof name !== 'string' || !name.trim() || name.length > 120 || confirmCreate !== true) {
       throw new GatewayError('Enter the exact bot name and confirm that an unknown name can create a bot.', 400)
     }
-    const bot = await upstream(context.req.raw, CURSOR + '/v0/grokbot/sessions', JSON.stringify({ name: name.trim() }))
+    const bot = await upstream(context.req.raw, CURSOR + '/v0/grokbot/sessions',
+      JSON.stringify({ name: name.trim() }), { legacyBot: true })
     if (typeof bot.id !== 'string' || !sessionId.test(bot.id) || typeof bot.name !== 'string') {
       throw new GatewayError('Provider returned an invalid bot.', 502)
     }
@@ -176,7 +181,8 @@ export function createGateway(fetchUpstream: typeof fetch = fetch) {
     const id = context.req.param('id')
     const after = context.req.query('after') ?? '-1'
     if (!sessionId.test(id) || !sequence.test(after)) throw new GatewayError('Invalid bot or cursor.', 400)
-    const data = await upstream(context.req.raw, `${CURSOR}/v0/grokbot/sessions/${id}/entries?afterUpdatedSeq=${after}`)
+    const data = await upstream(context.req.raw, `${CURSOR}/v0/grokbot/sessions/${id}/entries?afterUpdatedSeq=${after}`,
+      undefined, { legacyBot: true })
     if (!Array.isArray(data.entries) || typeof data.latestUpdatedSeq !== 'string' || !sequence.test(data.latestUpdatedSeq)) {
       throw new GatewayError('Provider returned an invalid transcript.', 502)
     }
@@ -191,7 +197,8 @@ export function createGateway(fetchUpstream: typeof fetch = fetch) {
     if (!sessionId.test(id) || typeof text !== 'string' || !text.trim() || text.length > 4000 || typeof messageId !== 'string' || !uuid.test(messageId)) {
       throw new GatewayError('Invalid bot or message.', 400)
     }
-    const result = await upstream(context.req.raw, `${CURSOR}/v0/grokbot/sessions/${id}/messages`, JSON.stringify({ text, messageId }))
+    const result = await upstream(context.req.raw, `${CURSOR}/v0/grokbot/sessions/${id}/messages`,
+      JSON.stringify({ text, messageId }), { legacyBot: true })
     if (result.delivery !== 'accepted_temporal' && result.delivery !== 'duplicate') {
       throw new GatewayError('Grok Bot did not accept this message.', 409)
     }
