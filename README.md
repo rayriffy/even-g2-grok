@@ -63,6 +63,7 @@ Use the live EHPK and keep the development server and simulator off.
 
 ## References
 
+- [Grok Bot listing icon](docs/app-icon.md)
 - [Everything EvenHub](https://github.com/even-realities/everything-evenhub)
 - [EvenHub networking](https://hub.evenrealities.com/docs/build/networking)
 - [EvenHub contextual menu](https://hub.evenrealities.com/docs/build/contextual-menu)
