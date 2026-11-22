@@ -39,7 +39,7 @@ export function addCursorLoginRoutes(app: Hono, fetchUpstream: typeof fetch) {
       }
 
       const mint = await post('/aiserver.v1.DashboardService/CreateUserApiKey', {
-        name: 'Bot Terminal for Even G2', expiresAt: String(Date.now() + KEY_LIFETIME),
+        name: 'Grok Bot for Even G2', expiresAt: String(Date.now() + KEY_LIFETIME),
       }, {
         Authorization: `Bearer ${accessToken}`,
         'Connect-Protocol-Version': '1',

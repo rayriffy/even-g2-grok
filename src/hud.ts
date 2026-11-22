@@ -24,7 +24,7 @@ export function glassFrame(session: Session): GlassFrame {
   if (!session.active) {
     return {
       screen: 'setup',
-      title: '>_  Bot Terminal',
+      title: '>_  Grok Bot',
       body: '',
       status: 'Connect an account',
       hint: 'Open Even Hub on your phone',
@@ -84,7 +84,7 @@ export function glassFrame(session: Session): GlassFrame {
 
   return {
     screen: `chat:${JSON.stringify([session.active.id, session.currentBot?.id])}`,
-    title: truncate(session.currentBot?.name ?? 'Bot Terminal'),
+    title: truncate(session.currentBot?.name ?? 'Grok Bot'),
     body: viewport.body || 'No messages yet.',
     status,
     hint,

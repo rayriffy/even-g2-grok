@@ -40,7 +40,7 @@ function visibleEntry(raw: unknown): Message | undefined {
     return { id: seq, role: 'you', at: createdAtMs, text }
   }
   if (kind === 'send-message') {
-    return { id: seq, role: 'bot', at: createdAtMs, text: (typeof text === 'string' && text.trim()) || '[Open Grok Bot to view this item]' }
+    return { id: seq, role: 'bot', at: createdAtMs, text: (typeof text === 'string' && text.trim()) || '[Open the official Grok Bot app to view this item]' }
   }
 }
 

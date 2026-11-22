@@ -51,7 +51,7 @@ function Dashboard({ session, demo, connection, actions }: {
   return (
     <div className={bot && !accountsOpen ? 'dashboard chat-open' : 'dashboard'}>
       <header className="dashboard-header">
-        <ScreenHeader title="Bot Terminal" subtitle={connection} actions={active && (
+        <ScreenHeader title="Grok Bot" subtitle={connection} actions={active && (
           <Button variant={accountsOpen ? 'highlight' : 'default'} className="accounts-toggle"
             aria-controls="account-panel" aria-expanded={accountsOpen} onClick={() => {
               if (accountsOpen && session.view === 'accounts') actions.inbox()

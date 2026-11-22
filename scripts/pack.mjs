@@ -22,11 +22,11 @@ if (!demo) {
   }
 }
 
-const output = resolve(root, process.env.EHPK_OUTPUT ?? (demo ? 'artifacts/bot-terminal-demo.ehpk' : 'artifacts/bot-terminal.ehpk'))
-const temp = await mkdtemp(join(tmpdir(), 'bot-terminal-pack-'))
+const output = resolve(root, process.env.EHPK_OUTPUT ?? (demo ? 'artifacts/grok-bot-demo.ehpk' : 'artifacts/grok-bot.ehpk'))
+const temp = await mkdtemp(join(tmpdir(), 'grok-bot-pack-'))
 const manifestPath = join(temp, 'app.json')
 const dist = join(temp, 'dist')
-const archive = join(temp, 'bot-terminal.ehpk')
+const archive = join(temp, 'grok-bot.ehpk')
 const env = { ...process.env, VITE_GATEWAY_BASE_URL: gatewayBase }
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 

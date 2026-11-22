@@ -27,6 +27,7 @@ test('first run, two-line previews, conversations, account switching and restore
     async load() { return saved },
     async save(state) { saved = state },
   }, true, () => {})
+  assert.equal(glassFrame(original).title, '>_  Grok Bot')
   assert.equal(glassFrame(original).status, 'Connect an account')
   await original.connect('studio', '')
   await setImmediate()

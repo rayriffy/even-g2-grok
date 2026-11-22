@@ -80,7 +80,7 @@ function visibleMessage(entry: Record<string, unknown>): Message | undefined {
   const at = Number.isFinite(rawTimestamp) && rawTimestamp >= 0 ? rawTimestamp : 0
   const text = firstText(nested.content, nested.text, body.content, body.text, body.prompt, decoded)
   if (text) return { id, role, at, text: text.trim() }
-  if (role === 'bot') return { id, role, at, text: '[Open Grok Bot to view this item]' }
+  if (role === 'bot') return { id, role, at, text: '[Open the official Grok Bot app to view this item]' }
 }
 
 export const CHAT_CURSOR = /^(?:-1|g:[0-9]{1,10}:[0-9]{1,20})$/

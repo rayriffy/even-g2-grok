@@ -48,7 +48,7 @@ test('browser login sends a PKCE challenge, polls statelessly, then stores only 
       assert.equal(authorization, `Bearer ${token}`)
       assert.equal(request.headers.get('Connect-Protocol-Version'), '1')
       const body = await request.json()
-      assert.equal(body.name, 'Bot Terminal for Even G2')
+      assert.equal(body.name, 'Grok Bot for Even G2')
       assert.ok(Math.abs(Number(body.expiresAt) - expiresAt) < 10_000)
       minted = true
       return Response.json({ apiKey: key })
