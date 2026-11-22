@@ -1,3 +1,5 @@
+import { CursorSpeechCapture, type CursorStream, type SpeechCapture } from './asr/cursor-stream.ts'
+
 export interface ChatRef { agentId: string; sessionId: string }
 export interface Bot { id: string; name: string; chat?: ChatRef; kind?: 'group' }
 export interface Profile { id: string; name: string; email?: string; bots: Bot[]; botNames?: string[] }
@@ -13,10 +15,11 @@ export interface BotClient {
   read(token: string, targets: readonly ReadTarget[], signal: AbortSignal): Promise<ReadResult[]>
   send(token: string, bot: Bot, text: string, messageId: string, signal: AbortSignal): Promise<void>
   transcribe(token: string, wav: Blob, signal: AbortSignal, provider?: 'cursor' | 'xai'): Promise<string>
+  streamSpeech?(token: string, signal: AbortSignal): SpeechCapture
 }
 
 export function gatewayClient(baseUrl: string, fetchRequest: typeof fetch = fetch): BotClient {
-  async function request<T>(path: string, token: string, options: RequestInit = {}): Promise<T> {
+  async function responseFor(path: string, token: string, options: RequestInit = {}) {
     const headers = new Headers(options.headers)
     headers.set('Authorization', `Bearer ${token}`)
     let response: Response
@@ -33,7 +36,11 @@ export function gatewayClient(baseUrl: string, fetchRequest: typeof fetch = fetc
       const body = await response.json().catch(() => ({}))
       throw new Error(body.error || `Gateway error (${response.status}).`)
     }
-    return response.json() as Promise<T>
+    return response
+  }
+
+  async function request<T>(path: string, token: string, options: RequestInit = {}): Promise<T> {
+    return (await responseFor(path, token, options)).json() as Promise<T>
   }
 
   function post<T>(path: string, token: string, data: object, signal?: AbortSignal) {
@@ -74,5 +81,14 @@ export function gatewayClient(baseUrl: string, fetchRequest: typeof fetch = fetc
       })
       return result.text
     },
+    streamSpeech: (token, signal) => new CursorSpeechCapture({
+      start: signal => request<CursorStream>('/transcribe/cursor/streams', token, { method: 'POST', signal }),
+      read: (stream, signal) => responseFor('/transcribe/cursor/streams/' + encodeURIComponent(stream.requestId),
+        stream.accessToken, { signal }),
+      append: (stream, sequence, pcm, signal) => request(
+        '/transcribe/cursor/streams/' + encodeURIComponent(stream.requestId) + '/' + sequence,
+        stream.accessToken, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: pcm, signal },
+      ),
+    }, signal),
   }
 }

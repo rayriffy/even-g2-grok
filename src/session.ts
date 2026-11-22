@@ -1,3 +1,4 @@
+import type { SpeechCapture } from './asr/cursor-stream.ts'
 import type { AccountProfile, Bot, BotClient, Message, Profile } from './client.ts'
 import { demos } from './demo.ts'
 import { ACCOUNT_ROWS, followPage, INBOX_ROWS } from './hud-text.ts'
@@ -315,10 +316,19 @@ export class Session {
     this.render()
   }
 
-  async processAudio(wav: Blob | undefined) {
+  beginSpeech() {
+    const account = this.active
+    if (account && !account.speechKey) return this.client.streamSpeech?.(account.key, this.epoch.signal)
+  }
+
+  async processAudio(wav: Blob | undefined, stream?: SpeechCapture) {
     const target = this.target()
-    if (!target || !this.voiceAvailable || this.working) return
+    if (!target || !this.voiceAvailable || this.working) {
+      stream?.cancel()
+      return
+    }
     if (!wav) {
+      stream?.cancel()
       this.microphone('No audio captured. Hold to talk again.')
       return
     }
@@ -328,7 +338,9 @@ export class Session {
     this.microphone('Transcribing…')
     try {
       const speechKey = target.account.speechKey
-      const text = (await this.client.transcribe(speechKey || target.account.key, wav, signal, speechKey ? 'xai' : 'cursor')).trim()
+      const transcript = stream ? await stream.finish(signal)
+        : await this.client.transcribe(speechKey || target.account.key, wav, signal, speechKey ? 'xai' : 'cursor')
+      const text = transcript.trim()
       if (signal.aborted) return
       if (!text) this.microphone('No speech heard. Try again.')
       else await this.deliver(target, text)

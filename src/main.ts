@@ -1,4 +1,5 @@
 import { AudioInputSource, OsEventTypeList, waitForEvenAppBridge } from '@evenrealities/even_hub_sdk'
+import type { SpeechCapture } from './asr/cursor-stream.ts'
 import { gatewayClient } from './client.ts'
 import { prepareCursorLogin } from './cursor-login.ts'
 import { demoClient } from './demo.ts'
@@ -15,9 +16,10 @@ const storageKey = 'bot-terminal-accounts-v1'
 let session: Session
 let hud: Awaited<ReturnType<typeof connectHud>> | undefined
 let voice: PushToTalk | undefined
-let target: { account: string; bot: string; source?: number } | undefined
+let target: { account: string; bot: string; source?: number; stream?: SpeechCapture } | undefined
 
 function cancelCapture() {
+  target?.stream?.cancel()
   target = undefined
   voice?.cancel()
   session.cancelVoice()
@@ -107,18 +109,23 @@ void ready.then(async connected => {
       const captured = target
       target = undefined
       if (captured?.account === session.activeId && captured.bot === session.currentBot?.id) {
-        void session.processAudio(wav)
-      }
+        void session.processAudio(wav, captured.stream)
+      } else captured?.stream?.cancel()
     },
     message => {
       if (!target) return
+      target.stream?.cancel()
       target = undefined
       session.microphone(message)
     },
   )
 
   const events = connected.onEvenHubEvent(event => {
-    if (event.audioEvent?.audioPcm) voice?.audio(event.audioEvent.audioPcm)
+    const pcm = event.audioEvent?.audioPcm
+    if (pcm && voice?.active) {
+      voice.audio(pcm)
+      target?.stream?.push(pcm)
+    }
     const action = event.menuItemClickEvent?.itemID
     if (action === MENU_ACCOUNTS || action === MENU_INBOX) {
       cancelCapture()
@@ -149,7 +156,7 @@ void ready.then(async connected => {
         session.microphone('Connect your account on the phone.')
         return
       }
-      target = { account: session.activeId, bot: bot.id, source: event.sysEvent?.eventSource }
+      target = { account: session.activeId, bot: bot.id, source: event.sysEvent?.eventSource, stream: session.beginSpeech() }
       session.microphone('Listening…  Release to send', true)
       voice?.press()
       return

@@ -4,6 +4,7 @@ import { HTTPException } from 'hono/http-exception'
 import { bodyLimit } from 'hono/body-limit'
 import type { Message, ReadResult } from '../src/client.ts'
 import { addCursorLoginRoutes, CURSOR_BACKEND } from './cursor-login.ts'
+import { cursorAudioMessage, cursorTranscriptRequest } from './cursor-audio.ts'
 import { acceptedDelivery, agentName, CHAT_CURSOR, chatRef, discoveredBots, readGrokChat, record } from './grok-bot.ts'
 
 const CURSOR = 'https://api.cursor.com'
@@ -95,6 +96,32 @@ export function createGateway(fetchUpstream: typeof fetch = fetch) {
       throw new GatewayError('Cursor returned an invalid account session.', 502)
     }
     return accessToken
+  }
+
+  async function streamingRpc(
+    request: Request, path: string, body: BodyInit, contentType: string, timeout: number,
+  ) {
+    const authorization = request.headers.get('Authorization')
+    if (!authorization || !/^Bearer [!-~]{12,8192}$/.test(authorization)) {
+      throw new GatewayError('Grok Bot voice needs a valid Cursor session.', 401)
+    }
+    let response: Response
+    try {
+      response = await fetchUpstream(CURSOR_BACKEND + path, {
+        method: 'POST', body, redirect: 'manual',
+        headers: { Authorization: authorization, 'Content-Type': contentType, Accept: contentType, 'Connect-Protocol-Version': '1' },
+        signal: AbortSignal.any([request.signal, AbortSignal.timeout(timeout)]),
+      })
+    } catch {
+      throw new GatewayError('Grok Bot voice is unreachable. Try again shortly.', 502)
+    }
+    if (response.ok) return response
+    await response.body?.cancel().catch(() => {})
+    if (response.status === 401 || response.status === 403) {
+      throw new GatewayError('Grok Bot voice declined this Cursor session.', response.status)
+    }
+    if (response.status === 429) throw new GatewayError('Grok Bot voice is rate limited. Try again shortly.', 429)
+    throw new GatewayError('Grok Bot could not start or continue the voice stream.', 502)
   }
 
   function grokRpc(request: Request, sessionToken: string, method: string, body: object) {
@@ -243,6 +270,44 @@ export function createGateway(fetchUpstream: typeof fetch = fetch) {
     })
     if (typeof result.text !== 'string') throw new GatewayError('Provider returned an invalid transcript.', 502)
     return context.json({ text: result.text.trim() })
+  })
+
+  app.post('/transcribe/cursor/streams', async context => {
+    const accessToken = await cursorSession(context.req.raw)
+    return context.json({ requestId: crypto.randomUUID(), accessToken })
+  })
+
+  app.get('/transcribe/cursor/streams/:id', async context => {
+    const id = context.req.param('id')
+    if (!uuid.test(id)) throw new GatewayError('Invalid voice stream.', 400)
+    const type = 'application/connect+json'
+    const response = await streamingRpc(context.req.raw, '/aiserver.v1.AiService/StreamSttSSE',
+      cursorTranscriptRequest(id), type, 48_000)
+    if (!response.body || !response.headers.get('Content-Type')?.startsWith(type)) {
+      await response.body?.cancel().catch(() => {})
+      throw new GatewayError('Grok Bot returned an invalid voice stream.', 502)
+    }
+    return new Response(response.body, { headers: { 'Content-Type': type, 'X-Accel-Buffering': 'no' } })
+  })
+
+  app.post('/transcribe/cursor/streams/:id/:sequence', bodyLimit({ maxSize: 12_800 }), async context => {
+    const id = context.req.param('id')
+    const number = context.req.param('sequence')
+    const seq = Number(number)
+    if (!uuid.test(id) || !/^(?:0|[1-9][0-9]?)$/.test(number) || seq > 80) {
+      throw new GatewayError('Invalid voice stream or audio sequence.', 400)
+    }
+    const request = context.req.raw
+    const pcm = await request.arrayBuffer()
+    if (request.headers.get('Content-Type') !== 'application/octet-stream' || pcm.byteLength % 2 || (seq === 0 && pcm.byteLength)) {
+      throw new GatewayError('Expected 16 kHz mono PCM audio.', 400)
+    }
+    const message = cursorAudioMessage(seq, pcm)
+    const response = await streamingRpc(request, '/aiserver.v1.BidiService/BidiAppend',
+      JSON.stringify({ requestId: { requestId: id }, appendSeqno: seq, dataBinary: btoa(String.fromCharCode(...message)) }),
+      'application/json', 12_000)
+    await response.body?.cancel().catch(() => {})
+    return context.json({ ok: true })
   })
 
   app.post('/transcribe', bodyLimit({ maxSize: MAX_WAV }), async context => {

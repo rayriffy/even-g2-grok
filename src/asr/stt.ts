@@ -1,6 +1,6 @@
 export const MAX_RECORDING_MS = 30_000
 const SAMPLE_RATE = 16_000
-const MAX_BYTES = SAMPLE_RATE * 2 * MAX_RECORDING_MS / 1000
+export const MAX_AUDIO_BYTES = SAMPLE_RATE * 2 * MAX_RECORDING_MS / 1000
 const MIN_BYTES = SAMPLE_RATE * 2 * 0.12
 
 export class Recording {
@@ -8,7 +8,7 @@ export class Recording {
   private chunks: Uint8Array[] = []
 
   push(pcm: Uint8Array) {
-    const remaining = MAX_BYTES - this.size
+    const remaining = MAX_AUDIO_BYTES - this.size
     if (remaining <= 0 || pcm.length === 0) return
     const chunk = pcm.slice(0, remaining)
     this.chunks.push(chunk)
