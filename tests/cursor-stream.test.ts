@@ -126,3 +126,19 @@ test('a rejected streaming credential sends no audio', { timeout: 2000 }, async 
   assert.equal((await upstream.request(p + '81', { method: 'POST', headers })).status, 400)
   assert.equal((await upstream.request(p + '1', { method: 'POST', headers, body: new Uint8Array(12_802) })).status, 413)
 })
+
+test('only the transcript read extends the Bun idle timeout', async () => {
+  const timeouts: Array<{ method: string; seconds: number }> = []
+  const env = { timeout(request: Request, seconds: number) { timeouts.push({ method: request.method, seconds }) } }
+  const app = createGateway(async () => new Response(frame({}, true), {
+    headers: { 'Content-Type': 'application/connect+json' },
+  }))
+  const route = '/transcribe/cursor/streams/00000000-0000-4000-8000-000000000001'
+  const headers = { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/octet-stream' }
+  assert.equal((await app.request('/ping', {}, env)).status, 200)
+  assert.equal((await app.request(route + '/0', { method: 'POST', headers }, env)).status, 200)
+  const response = await app.request(route, { headers }, env)
+  assert.equal(response.status, 200)
+  await response.arrayBuffer()
+  assert.deepEqual(timeouts, [{ method: 'GET', seconds: 50 }])
+})

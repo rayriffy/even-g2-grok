@@ -10,6 +10,7 @@ import { acceptedDelivery, agentName, CHAT_CURSOR, chatRef, discoveredBots, read
 const CURSOR = 'https://api.cursor.com'
 const STT = 'https://api.x.ai/v1/stt'
 const MAX_WAV = 960_044
+const TRANSCRIPT_TIMEOUT_MS = 48_000
 const sessionId = /^[0-9]{1,24}$/
 const sequence = /^(?:-1|[0-9]{1,24})$/
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
@@ -280,9 +281,15 @@ export function createGateway(fetchUpstream: typeof fetch = fetch) {
   app.get('/transcribe/cursor/streams/:id', async context => {
     const id = context.req.param('id')
     if (!uuid.test(id)) throw new GatewayError('Invalid voice stream.', 400)
+    // Bun passes its server as the environment when this app is the fetch handler.
+    // A quiet transcript must survive the recording and the upstream deadline.
+    const runtime = context.env as { timeout?: (request: Request, seconds: number) => void } | undefined
+    if (typeof runtime?.timeout === 'function') {
+      runtime.timeout(context.req.raw, Math.ceil(TRANSCRIPT_TIMEOUT_MS / 1000) + 2)
+    }
     const type = 'application/connect+json'
     const response = await streamingRpc(context.req.raw, '/aiserver.v1.AiService/StreamSttSSE',
-      cursorTranscriptRequest(id), type, 48_000)
+      cursorTranscriptRequest(id), type, TRANSCRIPT_TIMEOUT_MS)
     if (!response.body || !response.headers.get('Content-Type')?.startsWith(type)) {
       await response.body?.cancel().catch(() => {})
       throw new GatewayError('Grok Bot returned an invalid voice stream.', 502)

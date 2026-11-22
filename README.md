@@ -24,6 +24,8 @@ Set `DEPLOYS_AUTH_USER` and `DEPLOYS_AUTH_PASS` as repository secrets. Deploymen
 
 The gateway takes no credential environment variables and uses no database, cookies, or credential logging. The phone generates a one-time sign-in verifier and stores each account's keys in EvenHub app-scoped local storage. For streaming dictation, the phone holds a short-lived Cursor session in memory for the duration of the recording. Each gateway request forwards the credential to its provider and ends without storing it. Run the gateway on a trusted host with request-header and body capture disabled.
 
+When hosting behind a reverse proxy, allow the transcript response to stream and stay idle for up to 50 seconds. The Bun gateway applies this limit to the transcript read.
+
 ## Connect and use
 
 - Open **Bot Terminal** in the Even app and choose **Sign in with Cursor**, then **Continue to Cursor**. If the Even app keeps the link in its WebView, use **Copy sign-in link** and paste it into the phone’s browser. Finish the provider sign-in with the account that owns your bots, then return to the phone dashboard. The Cursor SDK flow creates a named API key that expires after 90 days. **Use an existing API key** is available for accounts with manually provisioned keys.
