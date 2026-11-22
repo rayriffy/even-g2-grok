@@ -42,7 +42,7 @@ export function demoClient(): BotClient {
       messages.push({ id: String(messages.length), role: 'you', text, at: Date.now() })
       messages.push({
         id: String(messages.length), role: 'bot', at: Date.now(),
-        text: 'Demo reply. I received your message. With a live gateway, this space shows replies from your Grok Bot.',
+        text: '**Demo reply.** I received your message.\n\nWith a [live gateway](https://github.com/rayriffy/even-g2-grok#deploy-and-pack), *your Grok Bot* will reply here.',
       })
     },
     async transcribe() { return 'Give me a quick summary.' },

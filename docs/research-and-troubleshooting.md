@@ -83,6 +83,14 @@ The two dictation exports each show a 57-byte Connect request for `StreamSttSSE`
 | The phone UI did not fit the intended EvenHub visual language. | The existing phone dashboard had custom styles. EvenDemo provided a reference for Toolkit components and tokens. | Build the dashboard with Even Toolkit and verify onboarding, account switching, and message sending in desktop Chromium, mobile WebKit, and the EvenHub simulator. [Even Toolkit](https://github.com/fabioglimb/even-toolkit) · [EvenDemo](https://github.com/fabioglimb/even-demo) |
 | Exact outbound headers were hard to infer from the phone capture. | The official iPhone app and the Bun gateway are different HTTP clients. The iPhone text capture contains no legacy `/v0/grokbot` calls. | Capture the gateway locally with synthetic credentials. Keep `x-cursor-client-type` explicit on the legacy routes and let the runtime supply its user agent. The approved live speech test succeeded through the normal SDK path. [Header reference](gateway-integration.md#current-routes-and-headers) |
 
+## Phone layout and reply rendering
+
+The Figma connector required edit access to the public guide. The desktop viewer showed the 393 px Even AI example with an inset content column, centered title, full-width reply cards, inset outgoing messages, and a composer below the conversation. The dashboard uses Even Toolkit’s 12 px page inset, 16 px card padding, 6 px related-control gaps, and 24 px section spacing. The chat keeps Grok Bot’s account action and G2 recording status. [Spacing guide](https://www.figma.com/design/X82y5uJvqMH95jgOfmV34j/Even-Realities---Software-Design-Guidelines--Public-?node-id=10001-74320) · [Even AI sample](https://www.figma.com/design/X82y5uJvqMH95jgOfmV34j/Even-Realities---Software-Design-Guidelines--Public-?node-id=10001-75139) · [Even Toolkit spacing tokens](https://github.com/fabioglimb/even-toolkit/blob/main/docs/theming.md#spacing-system)
+
+The gateway delivers reply Markdown as text. Both displays now use one parser and keep the original message in the transcript. The phone renders emphasis, links, code, lists, and tables with raw HTML disabled. Only HTTP(S) links are clickable, and image descriptions display without loading remote images. Phone previews and the glasses use the plain-text view. On G2 the conversion runs before wrapping, truncation, and pagination, so link destinations and formatting markers do not affect the measured line count. User messages retain their literal text. [Message rendering](../src/message-markdown.ts) · [Markdown regression tests](../tests/message-markdown.test.ts)
+
+To reproduce, run the phone demo with `pnpm dev`, connect Studio, open Scout, and send a message. The demo reply exercises bold, italics, and a link. `pnpm test` checks the corresponding G2 transcript and its two-line inbox preview.
+
 ## Verification checklist
 
 | Check | Evidence it provides |

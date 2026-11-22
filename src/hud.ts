@@ -5,6 +5,7 @@ import {
 } from '@evenrealities/even_hub_sdk'
 import { accountLabel, type Session } from './session.ts'
 import { ACCOUNT_ROWS, chatViewport, HUD_BODY_WIDTH, INBOX_ROWS, preview, truncate } from './hud-text.ts'
+import { messageText } from './message-markdown.ts'
 
 export const MENU_ACCOUNTS = 1
 export const MENU_INBOX = 2
@@ -50,7 +51,8 @@ export function glassFrame(session: Session): GlassFrame {
     const bots = session.active.bots
     const start = session.firstVisible
     const rows = bots.slice(start, start + INBOX_ROWS).map((bot, index) => {
-      const [first, second] = preview(session.thread(bot.id).messages.at(-1)?.text ?? 'No messages yet.')
+      const message = session.thread(bot.id).messages.at(-1)
+      const [first, second] = preview(message ? messageText(message) : 'No messages yet.')
       const name = bot.kind === 'group' ? bot.name + ' (Group)' : bot.name
       return [`${start + index === session.selection ? '>' : ' '} ${truncate(name, HUD_BODY_WIDTH - 25)}`, `  ${first}`, `  ${second}`].join('\n')
     })

@@ -63,6 +63,26 @@ test('first run, two-line previews, conversations, account switching and restore
   assert.equal(preview('one\ntwo')[0], 'one two')
 })
 
+test('G2 strips bot Markdown before measuring the transcript and the two-line preview', async () => {
+  const { session } = fixture()
+  await session.connect('studio', '')
+  session.openBot('scout')
+  assert.equal(await session.sendText('Keep my **literal** text.'), true)
+  await setImmediate()
+
+  const chat = glassFrame(session).body
+  assert.match(chat, /\*\*literal\*\*/)
+  assert.match(chat, /Demo reply\./)
+  assert.match(chat, /live gateway, your Grok Bot will reply here\./)
+  assert.doesNotMatch(chat, /\[live gateway\]|https:\/\/|\*your Grok Bot\*/)
+
+  session.inbox()
+  const [, first, second] = glassFrame(session).body.split('\n')
+  assert.match(`${first} ${second}`, /Demo reply\. I received your message\./)
+  assert.doesNotMatch(`${first} ${second}`, /\*|\[|https:\/\//)
+  session.close()
+})
+
 test('SDK opens on omitted zero event type, handles hold and release, and ignores audio-only envelopes', () => {
   assert.equal(eventType({ sysEvent: {} }), OsEventTypeList.CLICK_EVENT)
   assert.equal(eventType({ textEvent: { eventType: OsEventTypeList.LONG_PRESS_EVENT } }), OsEventTypeList.LONG_PRESS_EVENT)

@@ -1,5 +1,6 @@
 import { getAdvW, getTextWidth } from '@evenrealities/pretext'
 import type { Message } from './client.ts'
+import { messageText } from './message-markdown.ts'
 
 export const HUD_BODY_WIDTH = 536
 export const CHAT_ROWS = 7
@@ -78,7 +79,7 @@ function transcriptLines(messages: readonly Message[]): TranscriptLine[] {
     const cached = cachedLines.get(message)
     if (cached) return cached
     const marker = message.role === 'you' ? '> ' : '· '
-    const lines = wrap(message.text.replace(/\n{3,}/g, '\n\n'), HUD_BODY_WIDTH - PREFIX_WIDTH - WIDTH_MARGIN)
+    const lines = wrap(messageText(message).replace(/\n{3,}/g, '\n\n'), HUD_BODY_WIDTH - PREFIX_WIDTH - WIDTH_MARGIN)
       .map((text, part) => ({ messageId: message.id, part, text: (part === 0 ? marker : '  ') + text }))
     cachedLines.set(message, lines)
     return lines

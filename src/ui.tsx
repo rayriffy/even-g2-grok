@@ -11,6 +11,7 @@ import { SectionHeader } from 'even-toolkit/web/section-header'
 import { Textarea } from 'even-toolkit/web/textarea'
 import { AccountPanel, type AccountActions } from './account-panel.tsx'
 import type { Bot, Message } from './client.ts'
+import { messageText, replyHtml } from './message-markdown.ts'
 import type { Session } from './session.ts'
 
 interface DashboardActions extends AccountActions {
@@ -46,20 +47,30 @@ function Dashboard({ session, demo, connection, actions }: {
   const [showAccounts, setShowAccounts] = useState(false)
   const { active, currentBot: bot } = session
   const accountsOpen = !active || showAccounts || session.view === 'accounts'
+  const chatOpen = Boolean(bot) && !accountsOpen
   const choices = active?.botNames?.filter(name => !active.bots.some(item => item.kind !== 'group' && item.name === name)) ?? []
   const canLink = !demo && (choices.length > 0 || !active?.bots.some(item => item.kind !== 'group' && item.chat))
+  const accountsButton = active && (
+    <Button variant={accountsOpen ? 'highlight' : chatOpen ? 'ghost' : 'default'} size={chatOpen ? 'sm' : 'default'}
+      className="accounts-toggle" aria-controls="account-panel" aria-expanded={accountsOpen} onClick={() => {
+        if (accountsOpen && session.view === 'accounts') actions.inbox()
+        setShowAccounts(!accountsOpen)
+      }}>Accounts</Button>
+  )
   return (
-    <div className={bot && !accountsOpen ? 'dashboard chat-open' : 'dashboard'}>
+    <div className={chatOpen ? 'dashboard chat-open' : 'dashboard'}>
       <header className="dashboard-header">
-        <ScreenHeader title="Grok Bot" subtitle={connection} actions={active && (
-          <Button variant={accountsOpen ? 'highlight' : 'default'} className="accounts-toggle"
-            aria-controls="account-panel" aria-expanded={accountsOpen} onClick={() => {
-              if (accountsOpen && session.view === 'accounts') actions.inbox()
-              setShowAccounts(!accountsOpen)
-            }}>Accounts</Button>
-        )} />
+        {bot && chatOpen ? (
+          <div className="chat-nav">
+            <Button variant="ghost" size="icon" className="back-button" aria-label="Back to chats" onClick={actions.inbox}>
+              <IcChevronBack width={20} height={20} aria-hidden />
+            </Button>
+            <h1 className="text-medium-title" title={bot.name}>{bot.name}</h1>
+            {accountsButton}
+          </div>
+        ) : <ScreenHeader title="Grok Bot" subtitle={connection} className="m-0" actions={accountsButton} />}
       </header>
-      <main className="stack">
+      <main className="dashboard-main">
         <AccountPanel session={session} demo={demo} hidden={!accountsOpen} actions={actions} onConnected={() => setShowAccounts(false)} />
         {session.accountStatus && (
           <Card padding="sm" role="status" className="notice text-subtitle">{session.accountStatus}</Card>
@@ -70,15 +81,16 @@ function Dashboard({ session, demo, connection, actions }: {
               <Chat key={JSON.stringify([active.id, bot.id])} bot={bot} messages={session.currentThread.messages}
                 visible={!accountsOpen}
                 voiceStatus={session.voiceStatus || 'On G2, hold to talk and release to send.'}
-                busy={session.working || session.recording} onBack={actions.inbox} onSend={actions.send} />
+                busy={session.working || session.recording} onSend={actions.send} />
             ) : (
               <section className="stack" aria-label="Chats">
                 <SectionHeader title="Chats" className="m-0" action={<span className="profile-name text-subtitle">{active.name}</span>} />
                 {active.bots.length ? (
                   <ul className="stack compact" id="bots">
-                    {active.bots.map(item => (
-                      <li key={item.id}>
-                        <ListItem title={item.name} subtitle={session.thread(item.id).messages.at(-1)?.text ?? 'No messages yet.'}
+                    {active.bots.map(item => {
+                      const message = session.thread(item.id).messages.at(-1)
+                      return <li key={item.id}>
+                        <ListItem title={item.name} subtitle={message ? messageText(message).replace(/\s+/gu, ' ') : 'No messages yet.'}
                           className="bot-row" trailing={
                             <span className="flex items-center gap-2">
                               {item.kind === 'group' && <span className="text-subtitle text-text-dim">Group</span>}
@@ -87,7 +99,7 @@ function Dashboard({ session, demo, connection, actions }: {
                           }
                           onPress={() => actions.openBot(item.id)} />
                       </li>
-                    ))}
+                    })}
                   </ul>
                 ) : (
                   <Card><EmptyState title="No chats yet" description={canLink ? 'Link a bot to start a conversation.' : undefined} /></Card>
@@ -143,13 +155,12 @@ function LinkBot({ choices, session, onLink }: {
   )
 }
 
-function Chat({ bot, messages, visible, voiceStatus, busy, onBack, onSend }: {
+function Chat({ bot, messages, visible, voiceStatus, busy, onSend }: {
   bot: Bot
   messages: Message[]
   visible: boolean
   voiceStatus: string
   busy: boolean
-  onBack(): void
   onSend(message: string): Promise<boolean>
 }) {
   const list = useRef<HTMLOListElement>(null)
@@ -169,36 +180,30 @@ function Chat({ bot, messages, visible, voiceStatus, busy, onBack, onSend }: {
   }
   return (
     <section className="chat-screen" aria-label={bot.name}>
-      <div className="chat-heading">
-        <Button variant="default" className="back-button" onClick={onBack}>
-          <IcChevronBack width={20} height={20} aria-hidden /> Chats
-        </Button>
-        <h2 className="text-large-title">{bot.name}</h2>
-      </div>
       {messages.length ? (
-        <ol className="messages stack compact" ref={list} onScroll={event => {
+        <ol className="messages" ref={list} aria-label="Messages" onScroll={event => {
           const element = event.currentTarget
           follow.current = element.scrollHeight - element.scrollTop - element.clientHeight < 60
         }}>
           {messages.map(message => (
             <li key={message.id} className={message.role}>
-              <Card className="message-bubble" padding="sm">
-                <strong className="text-subtitle">{message.role === 'you' ? 'You' : bot.name}</strong>
-                <p className="text-normal-body">{message.text}</p>
+              <Card className="message-bubble text-normal-body" padding="none">
+                <span className="sr-only">{message.role === 'you' ? 'You' : bot.name}: </span>
+                {message.role === 'bot' ? (
+                  <div className="message-markdown" dangerouslySetInnerHTML={{ __html: replyHtml(message) }} />
+                ) : <p className="message-text">{message.text}</p>}
               </Card>
             </li>
           ))}
         </ol>
-      ) : <Card className="messages"><EmptyState title="No messages yet" /></Card>}
-      <Card className="stack compact">
+      ) : <div className="messages"><Card><EmptyState title="No messages yet" /></Card></div>}
+      <div className="chat-compose">
         <form className="composer" onSubmit={submit}>
-          <label className="field">Message
-            <Textarea ref={draft} rows={2} maxLength={4000} required name="message" />
-          </label>
+          <Textarea ref={draft} rows={1} maxLength={4000} required name="message" aria-label="Message" placeholder="Message" />
           <Button type="submit" disabled={busy}>Send</Button>
         </form>
         <p role="status" className="text-subtitle voice-status">{voiceStatus}</p>
-      </Card>
+      </div>
     </section>
   )
 }
