@@ -1,5 +1,7 @@
 # Grok Bot for Even G2
 
+<img width="905" height="504" alt="CleanShot 2026-11-23 at 18 08 05" src="https://github.com/user-attachments/assets/1c33f602-b62e-408c-b239-d5928ed617eb" />
+
 Read and message Grok Bots on Even Realities G2. Grok Bot for Even G2 runs in the Even app on your phone. A stateless Hono gateway handles the browser-to-provider connection, so your computer can be off.
 
 The phone dashboard uses the [Even Toolkit](https://github.com/fabioglimb/even-toolkit) light theme and web components, bundled into the EHPK.
