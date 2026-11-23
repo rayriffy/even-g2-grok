@@ -4,7 +4,7 @@ import {
   type EvenAppBridge, type EvenHubEvent,
 } from '@evenrealities/even_hub_sdk'
 import { accountLabel, type Session } from './session.ts'
-import { ACCOUNT_ROWS, chatViewport, HUD_BODY_WIDTH, INBOX_ROWS, preview, truncate } from './hud-text.ts'
+import { ACCOUNT_ROWS, alignRight, chatViewport, HUD_BODY_WIDTH, INBOX_ROWS, preview, truncate } from './hud-text.ts'
 import { messageText } from './message-markdown.ts'
 
 export const MENU_ACCOUNTS = 1
@@ -16,6 +16,7 @@ interface GlassFrame {
   screen: string
   title: string
   body: string
+  dimmedRows?: readonly number[]
   status: string
   hint: string
   pages: number
@@ -35,12 +36,14 @@ export function glassFrame(session: Session): GlassFrame {
 
   if (session.view === 'accounts') {
     const start = session.firstVisible
-    const accounts = session.accounts.slice(start, start + ACCOUNT_ROWS).map((account, index) =>
-      `${start + index === session.selection ? '>' : ' '} ${truncate(accountLabel(account), HUD_BODY_WIDTH - 45)}${account.id === session.activeId ? ' *' : ''}`)
+    const focusedRow = session.selection - start
+    const accounts = session.accounts.slice(start, start + ACCOUNT_ROWS).map((account, row) =>
+      `${row === focusedRow ? '>' : ' '} ${truncate(accountLabel(account), HUD_BODY_WIDTH - 45)}${account.id === session.activeId ? ' *' : ''}`)
     return {
       screen: 'accounts',
       title: 'Accounts',
       body: accounts.join('\n'),
+      dimmedRows: accounts.flatMap((_, row) => row === focusedRow ? [] : [row]),
       status: 'Switch account',
       hint: 'Tap to select   ·   Double tap back',
       pages: 0,
@@ -60,6 +63,7 @@ export function glassFrame(session: Session): GlassFrame {
       screen: `inbox:${session.active.id}`,
       title: truncate(`Chats / ${session.active.name}`),
       body: rows.join('\n\n') || 'No chats yet. Open the phone dashboard.',
+      dimmedRows: rows.flatMap((_, row) => [row * 4 + 1, row * 4 + 2]),
       status: bots.length ? `${session.selection + 1} / ${bots.length}` : 'Chat inbox',
       hint: bots.length ? 'Tap to open   ·   Menu for accounts' : 'Menu for accounts',
       pages: 0,
@@ -88,6 +92,7 @@ export function glassFrame(session: Session): GlassFrame {
     screen: `chat:${JSON.stringify([session.active.id, session.currentBot?.id])}`,
     title: truncate(session.currentBot?.name ?? 'Grok Bot'),
     body: viewport.body || 'No messages yet.',
+    dimmedRows: viewport.dimmedRows,
     status,
     hint,
     pages: viewport.pages,
@@ -99,9 +104,24 @@ export function eventType(event: EvenHubEvent): OsEventTypeList | undefined {
   return envelope ? envelope.eventType ?? OsEventTypeList.CLICK_EVENT : undefined
 }
 
+function displayFrame(frame: GlassFrame) {
+  const lines = frame.body.split('\n')
+  const dimmedRows = new Set(frame.dimmedRows)
+  // Both body containers use the same line positions. A line is visible in one layer.
+  return {
+    screen: frame.screen,
+    title: frame.title,
+    body: lines.map((line, row) => dimmedRows.has(row) ? '' : line).join('\n').trimEnd(),
+    dimmedBody: lines.map((line, row) => dimmedRows.has(row) ? line : '').join('\n').trimEnd(),
+    status: frame.status,
+    hint: alignRight(frame.hint, HINT_WIDTH),
+  }
+}
+
 const PANES = [
   { field: 'title', containerID: 2, containerName: 'terminal-title', xPosition: 20, yPosition: 13, width: HUD_BODY_WIDTH, height: 28, textColor: 4 },
   { field: 'body', containerID: 3, containerName: 'terminal-feed', xPosition: 20, yPosition: 47, width: HUD_BODY_WIDTH, height: 190, textColor: 4 },
+  { field: 'dimmedBody', containerID: 7, containerName: 'terminal-muted', xPosition: 20, yPosition: 47, width: HUD_BODY_WIDTH, height: 190, textColor: 2 },
   { field: 'status', containerID: 5, containerName: 'terminal-state', xPosition: 20, yPosition: 247, width: STATUS_WIDTH, height: 29, textColor: 4 },
   { field: 'hint', containerID: 6, containerName: 'terminal-hint', xPosition: 244, yPosition: 247, width: HINT_WIDTH, height: 29, textColor: 3 },
 ] as const
@@ -127,7 +147,7 @@ export async function connectHud(bridge: EvenAppBridge, firstFrame: GlassFrame, 
       new MenuItemProperty({ itemID: MENU_INBOX, itemName: 'Chat inbox' }),
     ],
   })
-  function page(frame: GlassFrame) {
+  function page(frame: ReturnType<typeof displayFrame>) {
     const textObject = [
       ...decorations,
       ...PANES.map(({ field, ...pane }) => new TextContainerProperty({
@@ -136,11 +156,11 @@ export async function connectHud(bridge: EvenAppBridge, firstFrame: GlassFrame, 
     ]
     return { containerTotalNum: textObject.length, textObject, menuObject }
   }
-  const result = await bridge.createStartUpPageContainer(new CreateStartUpPageContainer(page(firstFrame)))
+  let latest = displayFrame(firstFrame)
+  const result = await bridge.createStartUpPageContainer(new CreateStartUpPageContainer(page(latest)))
   if (result !== StartUpPageCreateResult.success) throw new Error('Could not open the glasses display.')
 
-  let shown = { ...firstFrame }
-  let latest = firstFrame
+  let shown = { ...latest }
   let timer: ReturnType<typeof setTimeout> | undefined
   let pending = false
   let closed = false
@@ -180,8 +200,9 @@ export async function connectHud(bridge: EvenAppBridge, firstFrame: GlassFrame, 
   }
   return {
     render(frame: GlassFrame) {
-      if (latest.screen !== frame.screen || PANES.some(({ field }) => frame[field] !== latest[field])) {
-        latest = frame
+      const next = displayFrame(frame)
+      if (latest.screen !== next.screen || PANES.some(({ field }) => next[field] !== latest[field])) {
+        latest = next
         failures = 0
       }
       schedule()

@@ -93,6 +93,14 @@ The gateway delivers reply Markdown as text. Both displays now use one parser an
 
 To reproduce, run the phone demo with `pnpm dev`, connect Studio, open Scout, and send a message. The demo reply exercises bold, italics, and a link. `pnpm test` checks the corresponding G2 transcript and its two-line inbox preview.
 
+## Glasses footer and brightness
+
+Static analysis of the supplied G2 2.4.1.4 image (SHA-256 prefix `1706cf2fecf787a1`) used Rizin and Capstone. The Terminal row renderer reads a row type at `0x604c1e`, then selects `#333333` for types 3 and 4 and `#FFFFFF` for other types at `0x604d46` and `0x604d4c`. It applies the color through an LVGL text-style setter at `0x441a2e`. The record types alone leave the speaker mapping uncertain. [LVGL 9.3 text properties](https://github.com/lvgl/lvgl/blob/v9.3.0/src/misc/lv_style.h)
+
+Grok Bot uses SDK brightness `4` for bot replies and names and `2` for prompts and inbox previews. The account row under the cursor uses level `4`. The other account rows use level `2`, and `*` marks the active account. Two text containers share the same row positions. Blank lines preserve alignment as each container receives only its own text. The HUD uses seven text containers, and a blank container receives gestures so page updates can stay in place. [HUD renderer](../src/hud.ts) · [Glasses container limits](https://github.com/even-realities/everything-evenhub/blob/main/plugins/everything-evenhub/skills/glasses-ui/SKILL.md#container-rules)
+
+Text containers start at their left edge. The footer measures each hint with Pretext and adds leading spaces to approximate a shared right edge within one space width. The measured space has an advance of 5 px. The HUD updates the hint text in place when its length changes. [Width and wrapping](../src/hud-text.ts) · [HUD tests](../tests/hud.test.ts)
+
 ## Verification checklist
 
 | Check | Evidence it provides |

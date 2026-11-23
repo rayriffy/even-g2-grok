@@ -9,16 +9,20 @@ export const ACCOUNT_ROWS = 5
 const MAX_LINE_LENGTH = 120
 const MAX_LINE_BYTES = 135
 const PREFIX_WIDTH = getTextWidth('> ')
+const SPACE_WIDTH = getTextWidth(' ')
 const WIDTH_MARGIN = 8
 const encoder = new TextEncoder()
 
-function fits(text: string, limit: number) {
-  if (text.length > MAX_LINE_LENGTH || encoder.encode(text).length > MAX_LINE_BYTES) return false
+function textWidth(text: string) {
   let width = getTextWidth(text)
   for (const glyph of text) {
     if (!getAdvW(glyph.codePointAt(0)!) && !/[\p{Mark}\p{Cf}]/u.test(glyph)) width += 20
   }
-  return width <= limit
+  return width
+}
+
+function fits(text: string, limit: number) {
+  return text.length <= MAX_LINE_LENGTH && encoder.encode(text).length <= MAX_LINE_BYTES && textWidth(text) <= limit
 }
 
 export function wrap(text: string, limit = HUD_BODY_WIDTH - WIDTH_MARGIN): string[] {
@@ -60,6 +64,14 @@ export function truncate(text: string, limit = HUD_BODY_WIDTH - WIDTH_MARGIN) {
   return result.trimEnd() + '…'
 }
 
+export function alignRight(text: string, width: number) {
+  if (!text) return ''
+  const limit = width - WIDTH_MARGIN
+  const visible = truncate(text, limit)
+  const spaces = Math.max(0, Math.floor((limit - textWidth(visible)) / SPACE_WIDTH))
+  return ' '.repeat(spaces) + visible
+}
+
 export function preview(text: string): [string, string] {
   const limit = HUD_BODY_WIDTH - WIDTH_MARGIN - PREFIX_WIDTH
   const lines = wrap(text.replace(/\s+/gu, ' '), limit)
@@ -70,6 +82,7 @@ interface TranscriptLine {
   messageId: string
   part: number
   text: string
+  dimmed: boolean
 }
 
 const cachedLines = new WeakMap<Message, TranscriptLine[]>()
@@ -78,9 +91,10 @@ function transcriptLines(messages: readonly Message[]): TranscriptLine[] {
   return messages.flatMap(message => {
     const cached = cachedLines.get(message)
     if (cached) return cached
-    const marker = message.role === 'you' ? '> ' : '· '
+    const dimmed = message.role === 'you'
+    const marker = dimmed ? '> ' : '· '
     const lines = wrap(messageText(message).replace(/\n{3,}/g, '\n\n'), HUD_BODY_WIDTH - PREFIX_WIDTH - WIDTH_MARGIN)
-      .map((text, part) => ({ messageId: message.id, part, text: (part === 0 ? marker : '  ') + text }))
+      .map((text, part) => ({ messageId: message.id, part, text: (part === 0 ? marker : '  ') + text, dimmed }))
     cachedLines.set(message, lines)
     return lines
   })
@@ -88,10 +102,12 @@ function transcriptLines(messages: readonly Message[]): TranscriptLine[] {
 
 export function chatViewport(messages: readonly Message[], fromEnd: number) {
   const lines = transcriptLines(messages)
-  if (lines.length === 0) return { body: '', pages: 0 }
+  if (lines.length === 0) return { body: '', dimmedRows: [], pages: 0 }
   const start = Math.max(0, lines.length - CHAT_ROWS - fromEnd)
+  const visible = lines.slice(start, start + CHAT_ROWS)
   return {
-    body: lines.slice(start, start + CHAT_ROWS).map(line => line.text).join('\n'),
+    body: visible.map(line => line.text).join('\n'),
+    dimmedRows: visible.flatMap((line, row) => line.dimmed ? [row] : []),
     pages: Math.max(1, lines.length - CHAT_ROWS + 1),
   }
 }
