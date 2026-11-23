@@ -75,6 +75,21 @@ The table lists app-set headers and labels the generated multipart content type.
 
 The Bun runtime supplies the outbound user agent. A loopback audit with synthetic credentials verified the app-set headers and the runtime-generated headers independently. The three legacy calls explicitly opt in to their client-type and request-ID headers. Speech stream correlation uses a request ID in the body. [Legacy and streaming header tests](../tests/gateway.test.ts) · [Streaming tests](../tests/cursor-stream.test.ts) · [Bun fetch headers](https://bun.com/docs/runtime/networking/fetch#custom-headers)
 
+## EvenHub whitelist review
+
+The production EHPK for 0.1.10 declares `https://api.rayriffy.com` in its network whitelist. The WebView sends account, chat, and dictation requests to that origin under `/grokbot-gateway`. The gateway handles server-to-server calls to the providers. For sign-in, the app copies the Cursor approval URL for the user to open in their phone browser. The dashboard polls the gateway for completion. [Package manifest generation](../scripts/pack.mjs) · [WebView requests](../src/client.ts) · [Cursor sign-in](../src/cursor-login.ts) · [EvenHub network permissions](https://github.com/even-realities/everything-evenhub/blob/main/plugins/everything-evenhub/skills/build-and-deploy/SKILL.md#cors-in-the-webview)
+
+A production build with `pnpm exec vite build --sourcemap` and the same gateway base URL mapped the four URLs from the review notice to these sources.
+
+| Bundle string | Source and purpose |
+| --- | --- |
+| `http://${e.url}` | `linkify-it` adds a scheme when turning bare domains in reply text into link targets. |
+| `https://react.dev/errors/` | React DOM uses it to construct links in production error messages. |
+| `http://${i}` | `markdown-it` normalizes the display text of bare links and strips the added scheme. |
+| `https://cursor.com/loginDeepControl` | The phone app constructs the approval URL shown in the copy-link flow. |
+
+Rendering a reply formats its links locally. Following a link is a separate user action. Starting in 0.1.11, the live manifest includes the full React diagnostics and Cursor approval URLs alongside the gateway origin in response to the review. The EvenHub CLI packages both URL entries with their paths. [Markdown rendering](../src/message-markdown.ts) · [Sign-in polling test](../tests/cursor-login.test.ts) · [Release packaging](../scripts/pack.mjs)
+
 ## Hot paths
 
 **Chat.** The gateway discovers bots and group chats through the same roster RPC. It records the provider identity and viewer session for each native conversation. A local cursor tracks generation and update sequence. The phone refreshes every four seconds while it can display the result, with one bot read while chat is open and a bounded rotation for inbox previews. The gateway bounds reads and paginates recent bursts. Message delivery uses a client-generated ID and reuses that ID when an ambiguous send is retried. [Native roster and transcript adapter](../gateway/grok-bot.ts) · [Session state](../src/session.ts)

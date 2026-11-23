@@ -48,7 +48,7 @@ try {
     manifest.permissions.push({
       name: 'network',
       desc: 'Connect to your Grok Bots and transcribe your push-to-talk audio through your gateway.',
-      whitelist: [gatewayOrigin],
+      whitelist: [gatewayOrigin, 'https://react.dev/errors/', 'https://cursor.com/loginDeepControl'],
     })
   }
   await writeFile(manifestPath, JSON.stringify(manifest))
