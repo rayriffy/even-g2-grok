@@ -18,6 +18,10 @@ The [gateway workflow](.github/workflows/gateway.yml) publishes `ghcr.io/rayriff
 
 Set `DEPLOYS_AUTH_USER` and `DEPLOYS_AUTH_PASS` as repository secrets. Deployment defaults to the `rayriffy` project. For a private GHCR package, set `DEPLOYS_PULL_SECRET` to the Deploys.app pull secret name with read access to the image. CI checks the live route at `https://api.rayriffy.com/grokbot-gateway/ping`. Set `DEPLOYS_GATEWAY_BASE_URL` to check a different route and `DEPLOYS_PROJECT` to deploy into a different project.
 
+### GitHub Actions app builds
+
+The [app packaging workflow](.github/workflows/package-app.yml) runs on pushes to `main`, pushes of `v*` tags, and manual runs. It runs the tests, builds the live app, and saves the EHPK as `grok-bot-v<version>.ehpk` under **Artifacts** on the workflow run. A tag such as `v0.1.13` must match the version in `app.json`. The workflow uses the deployed gateway URL by default and honors the `DEPLOYS_GATEWAY_BASE_URL` repository variable.
+
 ### Other hosts and packaging
 
 1. Run `pnpm install --frozen-lockfile`.

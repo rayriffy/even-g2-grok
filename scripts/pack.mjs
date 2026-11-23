@@ -65,6 +65,7 @@ try {
   assert.equal(bytes.subarray(0, 4).toString('ascii'), 'EHPK')
   assert.equal(bytes.length, result.size)
   assert.equal(result.package_id, manifest.package_id)
+  assert.equal(result.version, manifest.version)
   assert.equal(result.min_app_version, manifest.min_app_version)
   assert.equal(result.ok, true)
   assert.deepEqual(result.warnings, [])

@@ -1,0 +1,62 @@
+name: Package Grok Bot app
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Read app version
+        id: app
+        shell: bash
+        run: |
+          version="$(node -p 'require("./app.json").version')"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo '::error::app.json must specify a version in x.y.z format.'
+            exit 1
+          fi
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::The Git tag must match app.json version v$version."
+            exit 1
+          fi
+          printf 'path=artifacts/grok-bot-v%s.ehpk\n' "$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Build and pack live EHPK
+        env:
+          VITE_GATEWAY_BASE_URL: ${{ vars.DEPLOYS_GATEWAY_BASE_URL || 'https://api.rayriffy.com/grokbot-gateway' }}
+          EHPK_OUTPUT: ${{ steps.app.outputs.path }}
+        run: pnpm pack:live
+
+      - name: Upload versioned EHPK
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.app.outputs.path }}
+          archive: false
+          if-no-files-found: error
