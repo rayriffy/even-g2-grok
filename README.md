@@ -58,6 +58,8 @@ The demo EHPK at `artifacts/grok-bot-demo.ehpk` uses package ID `com.rayriffy.gr
 
 For simulator QA, start `pnpm dev` and `pnpm simulate` to see first-run setup, or open `http://localhost:5173/tests/simulator.html` in the simulator to load both test accounts. The fixture uses disposable in-memory storage. The automated tests cover voice capture and WAV format, reply and preview rendering, account isolation, duplicate-send retry, and the client-to-gateway contract with mocked providers.
 
+Run `pnpm capture:listing` to regenerate the [EvenHub listing screenshots](docs/listing-screenshots.md) from the current glasses UI.
+
 Live Cursor sign-in, bot discovery, transcript reading, and text delivery with a bot reply were verified through the deployed gateway. A live diagnostic streamed one synthetic clip through Grok Bot using a Cursor SDK sign-in and received the expected final transcript. Integration tests exercise the full hold-to-talk path through Hono with a simulated Cursor upstream. Physical G2 streaming still needs verification.
 
 ### Physical G2 check

@@ -15,6 +15,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "simulate": "evenhub-simulator http://localhost:5173",
+    "capture:listing": "node scripts/listing/capture.mjs",
     "pack:demo": "node scripts/pack.mjs --demo",
     "test": "node --test tests/*.test.ts",
     "gateway": "bun gateway/index.ts",
