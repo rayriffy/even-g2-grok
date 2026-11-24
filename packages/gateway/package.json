@@ -10,7 +10,10 @@
     }
   },
   "files": ["dist/index.js", "dist/index.d.ts", "dist/http.d.ts"],
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/rayriffy/even-g2-grok.git",
