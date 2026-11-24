@@ -12,7 +12,7 @@ import { Textarea } from 'even-toolkit/web/textarea'
 import { AccountPanel, type AccountActions } from './account-panel.tsx'
 import type { Bot, Message } from './client.ts'
 import { messageText, replyHtml } from './message-markdown.ts'
-import type { Session } from './session.ts'
+import type { DictationTimings, Session } from './session.ts'
 
 interface DashboardActions extends AccountActions {
   link(name: string): Promise<void>
@@ -81,6 +81,7 @@ function Dashboard({ session, demo, connection, actions }: {
               <Chat key={JSON.stringify([active.id, bot.id])} bot={bot} messages={session.currentThread.messages}
                 visible={!accountsOpen}
                 voiceStatus={session.voiceStatus || 'On G2, hold to talk and release to send.'}
+                dictationTimings={session.dictationTimings}
                 busy={session.working || session.recording} onSend={actions.send} />
             ) : (
               <section className="stack" aria-label="Chats">
@@ -155,11 +156,12 @@ function LinkBot({ choices, session, onLink }: {
   )
 }
 
-function Chat({ bot, messages, visible, voiceStatus, busy, onSend }: {
+function Chat({ bot, messages, visible, voiceStatus, dictationTimings, busy, onSend }: {
   bot: Bot
   messages: Message[]
   visible: boolean
   voiceStatus: string
+  dictationTimings?: DictationTimings
   busy: boolean
   onSend(message: string): Promise<boolean>
 }) {
@@ -203,7 +205,34 @@ function Chat({ bot, messages, visible, voiceStatus, busy, onSend }: {
           <Button type="submit" disabled={busy}>Send</Button>
         </form>
         <p role="status" className="text-subtitle voice-status">{voiceStatus}</p>
+        {dictationTimings && <DictationTimingDetails timings={dictationTimings} />}
       </div>
     </section>
+  )
+}
+
+const timingLabels = [
+  ['releaseToReadyMs', 'Release to text ready'],
+  ['setupMs', 'Stream setup'],
+  ['firstPartialMs', 'First partial'],
+  ['micStopMs', 'Microphone stop'],
+  ['audioDrainMs', 'Pending audio uploads'],
+  ['stopAckMs', 'Stop response'],
+  ['stopToFinalMs', 'Stop to final text'],
+  ['finalToEndMs', 'Final text to stream end'],
+] as const satisfies readonly [keyof DictationTimings, string][]
+
+function DictationTimingDetails({ timings }: { timings: DictationTimings }) {
+  return (
+    <details className="dictation-timings text-subtitle">
+      <summary>Dictation timings</summary>
+      <dl>
+        {timingLabels.map(([key, label]) => {
+          const value = timings[key]
+          if (value === undefined) return null
+          return <div key={key}><dt>{label}</dt><dd>{Math.round(value)} ms</dd></div>
+        })}
+      </dl>
+    </details>
   )
 }

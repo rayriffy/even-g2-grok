@@ -16,7 +16,13 @@ const storageKey = 'bot-terminal-accounts-v1'
 let session: Session
 let hud: Awaited<ReturnType<typeof connectHud>> | undefined
 let voice: PushToTalk | undefined
-interface CaptureTarget { account: string; bot: string; source?: number; stream?: SpeechCapture; released?: boolean }
+interface CaptureTarget {
+  account: string
+  bot: string
+  source?: number
+  stream?: SpeechCapture
+  releasedAt?: number
+}
 let target: CaptureTarget | undefined
 
 function cancelCapture() {
@@ -105,11 +111,12 @@ void ready.then(async connected => {
       // Simulator 0.9.5 returns the disabled state even when capture stopped.
       return stopped || demo
     },
-    wav => {
+    (wav, micStoppedAt) => {
       const captured = target
       target = undefined
       if (captured?.account === session.activeId && captured.bot === session.currentBot?.id) {
-        void session.processAudio(wav, captured.stream)
+        const timing = captured.releasedAt === undefined ? undefined : { releasedAt: captured.releasedAt, micStoppedAt }
+        void session.processAudio(wav, captured.stream, timing)
       } else captured?.stream?.cancel()
     },
     message => {
@@ -158,7 +165,7 @@ void ready.then(async connected => {
       }
       const capture: CaptureTarget = { account: session.activeId, bot: bot.id, source: event.sysEvent?.eventSource }
       capture.stream = session.beginSpeech(text => {
-        if (target === capture && !capture.released) session.previewSpeech(text)
+        if (target === capture && capture.releasedAt === undefined) session.previewSpeech(text)
       })
       target = capture
       session.microphone('Listening…  Release to send', true)
@@ -167,8 +174,8 @@ void ready.then(async connected => {
     }
     if (type === OsEventTypeList.LONG_PRESS_RELEASE_EVENT) {
       const source = event.sysEvent?.eventSource
-      if (target && !target.released && (!source || !target.source || target.source === source)) {
-        target.released = true
+      if (target && target.releasedAt === undefined && (!source || !target.source || target.source === source)) {
+        target.releasedAt = performance.now()
         session.previewSpeech('')
         void voice?.release()
       }

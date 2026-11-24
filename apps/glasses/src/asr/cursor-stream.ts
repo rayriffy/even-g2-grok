@@ -19,6 +19,16 @@ export interface SpeechCapture {
   push(pcm: Uint8Array): void
   finish(signal: AbortSignal): Promise<string>
   cancel(): void
+  readonly timings?: Readonly<SpeechStreamTimings>
+}
+
+export interface SpeechStreamTimings {
+  setupMs?: number
+  firstPartialMs?: number
+  audioDrainMs?: number
+  stopAckMs?: number
+  stopToFinalMs?: number
+  finalToEndMs?: number
 }
 
 async function readTranscript(response: Response, onPartial: (text: string) => void) {
@@ -26,6 +36,7 @@ async function readTranscript(response: Response, onPartial: (text: string) => v
   const reader = response.body.getReader()
   let pending = new Uint8Array(0)
   let final = ''
+  let finalAt: number | undefined
   try {
     for (;;) {
       const { value, done } = await reader.read()
@@ -44,11 +55,13 @@ async function readTranscript(response: Response, onPartial: (text: string) => v
         offset += 5 + length
         if (flags & 2) {
           if (event.error) throw new Error('Grok Bot could not complete voice transcription.')
-          return final
+          return { text: final, finalAt, endedAt: performance.now() }
         }
         if (typeof event.text !== 'string') continue
-        if (event.isFinal === true) final = event.text
-        else if (event.kind === 'KIND_PARTIAL') onPartial(event.text)
+        if (event.isFinal === true) {
+          final = event.text
+          finalAt = performance.now()
+        } else if (event.kind === 'KIND_PARTIAL') onPartial(event.text)
       }
       pending = combined.slice(offset)
     }
@@ -58,17 +71,19 @@ async function readTranscript(response: Response, onPartial: (text: string) => v
 }
 
 export class CursorSpeechCapture implements SpeechCapture {
+  readonly timings: SpeechStreamTimings = {}
   private readonly controller = new AbortController()
   private readonly transport: Transport
   private readonly signal: AbortSignal
   private readonly onPartial?: (text: string) => void
   private readonly audio = new Uint8Array(MAX_AUDIO_BYTES)
+  private readonly startedAt = performance.now()
+  private readonly connection: Promise<CursorStream>
   private size = 0
   private sent = 0
   private sequence = 0
   private finishing = false
-  private connection?: Promise<CursorStream>
-  private transcript?: Promise<string>
+  private transcript?: ReturnType<typeof readTranscript>
   private pumping?: Promise<void>
   private failure?: Error
 
@@ -76,6 +91,8 @@ export class CursorSpeechCapture implements SpeechCapture {
     this.transport = transport
     this.signal = AbortSignal.any([signal, this.controller.signal])
     this.onPartial = onPartial
+    this.connection = this.open()
+    void this.connection.catch(error => this.fail(error))
   }
 
   push(pcm: Uint8Array) {
@@ -87,6 +104,7 @@ export class CursorSpeechCapture implements SpeechCapture {
   }
 
   async finish(signal: AbortSignal) {
+    const drainStartedAt = performance.now()
     this.finishing = true
     const abort = () => this.cancel()
     signal.addEventListener('abort', abort, { once: true })
@@ -98,10 +116,17 @@ export class CursorSpeechCapture implements SpeechCapture {
       this.check()
       await this.pump()
       this.check()
-      const stream = await this.connection!
+      const stream = await this.connection
+      const stopStartedAt = performance.now()
+      this.timings.audioDrainMs = stopStartedAt - drainStartedAt
       await this.transport.append(stream, this.sequence++, new Uint8Array(0), this.signal)
-      const text = await this.transcript!
+      this.timings.stopAckMs = performance.now() - stopStartedAt
+      const { text, finalAt, endedAt } = await this.transcript!
       this.check()
+      if (finalAt !== undefined) {
+        if (finalAt >= stopStartedAt) this.timings.stopToFinalMs = finalAt - stopStartedAt
+        this.timings.finalToEndMs = endedAt - finalAt
+      }
       return text
     } finally {
       signal.removeEventListener('abort', abort)
@@ -128,7 +153,7 @@ export class CursorSpeechCapture implements SpeechCapture {
   }
 
   private async flush() {
-    const stream = await (this.connection ??= this.open())
+    const stream = await this.connection
     while (!this.signal.aborted) {
       const remaining = this.size - this.sent
       const bytes = remaining >= CHUNK_BYTES ? CHUNK_BYTES : this.finishing ? remaining - remaining % 2 : 0
@@ -140,16 +165,19 @@ export class CursorSpeechCapture implements SpeechCapture {
   }
 
   private async open() {
+    this.check()
     const stream = await this.transport.start(this.signal)
+    this.check()
     this.transcript = this.transport.read(stream, this.signal)
       .then(response => readTranscript(response, text => {
-        if (!this.signal.aborted) this.onPartial?.(text)
+        if (this.signal.aborted) return
+        if (text.trim()) this.timings.firstPartialMs ??= performance.now() - this.startedAt
+        this.onPartial?.(text)
       }))
-      .catch(error => {
-        this.fail(error)
-        return ''
-      })
+    void this.transcript.catch(error => this.fail(error))
     await this.transport.append(stream, this.sequence++, new Uint8Array(0), this.signal)
+    this.check()
+    this.timings.setupMs = performance.now() - this.startedAt
     return stream
   }
 }

@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { Elysia } from 'elysia'
 import { setImmediate } from 'node:timers/promises'
 import { createGateway } from '../src/index.ts'
+import { CursorSpeechCapture, type CursorStream } from '../../../apps/glasses/src/asr/cursor-stream.ts'
 import { gatewayClient } from '../../../apps/glasses/src/client.ts'
 import { glassFrame } from '../../../apps/glasses/src/hud.ts'
 import { Session, type StoredAccounts } from '../../../apps/glasses/src/session.ts'
@@ -30,6 +31,8 @@ function fixture(authorized: boolean) {
   const appends: Array<{ ids: { requestId: string }; sequence: number; payload: Buffer }> = []
   let acceptedAudio!: () => void
   const firstAudio = new Promise<void>(resolve => { acceptedAudio = resolve })
+  let acceptedSetup!: () => void
+  const setup = new Promise<void>(resolve => { acceptedSetup = resolve })
   const upstream = createGateway(async (input, init) => {
     const request = new Request(input, init)
     assert.equal(request.redirect, 'manual')
@@ -61,6 +64,7 @@ function fixture(authorized: boolean) {
     const payload = Buffer.from(dataBinary, 'base64')
     appends.push({ ids: requestId, sequence: appendSeqno, payload })
     if (!authorized) return Response.json({}, { status: 401 })
+    if (payload[0] === 10) acceptedSetup()
     if (payload[0] === 18) acceptedAudio()
     if (payload[0] === 26) {
       const final = frame({ isFinal: true, text: phrase })
@@ -73,7 +77,7 @@ function fixture(authorized: boolean) {
   })
   return {
     client: gatewayClient('https://gateway.invalid', async (input, init) => upstream.fetch(new Request(input, init))),
-    upstream, appends, firstAudio,
+    upstream, appends, firstAudio, setup,
     async emit(event: object) {
       await readOpen
       const bytes = frame(event)
@@ -86,7 +90,7 @@ function fixture(authorized: boolean) {
   }
 }
 
-test('hold-to-talk previews revised partials and sends one final Cursor transcript', { timeout: 2000 }, async () => {
+test('hold-to-talk opens before audio, previews partials, and reports release timings', { timeout: 2000 }, async () => {
   const stream = fixture(true)
   const sends: string[] = []
   const owner = { id: 'owner', name: 'Owner', email: 'owner@example.test', key: sdkKey, bots: [{ id: 'bot', name: 'Bot' }] }
@@ -119,8 +123,13 @@ test('hold-to-talk previews revised partials and sends one final Cursor transcri
     if (text === 'This is a stream') previewChanged()
   })!
   let delivery: Promise<void> | undefined
-  const mic = new PushToTalk(async () => true, wav => { delivery = session.processAudio(wav, capture) }, assert.fail)
+  let releasedAt = 0
+  const mic = new PushToTalk(async () => true, (wav, micStoppedAt) => {
+    delivery = session.processAudio(wav, capture, { releasedAt, micStoppedAt })
+  }, assert.fail)
   mic.press()
+  await stream.setup
+  assert.deepEqual(stream.appends.map(part => part.sequence), [0])
   const pcm = new Uint8Array(12_800)
   mic.audio(pcm)
   capture.push(pcm.subarray(0, 12799))
@@ -138,6 +147,7 @@ test('hold-to-talk previews revised partials and sends one final Cursor transcri
   const tail = new Uint8Array(4800)
   mic.audio(tail)
   capture.push(tail)
+  releasedAt = performance.now()
   await mic.release()
   await mic.release()
   try {
@@ -145,6 +155,13 @@ test('hold-to-talk previews revised partials and sends one final Cursor transcri
     assert.deepEqual(sends, [phrase])
     assert.equal(partials.length, 2)
     assert.equal(session.speechPreview, '')
+    const timings = session.dictationTimings
+    assert(timings)
+    assert.deepEqual(Object.keys(timings).sort(), [
+      'audioDrainMs', 'finalToEndMs', 'firstPartialMs', 'micStopMs', 'releaseToReadyMs', 'setupMs', 'stopAckMs', 'stopToFinalMs',
+    ])
+    assert(Object.values(timings).every(ms => Number.isFinite(ms) && ms >= 0))
+    assert(timings.releaseToReadyMs >= timings.micStopMs)
     assert.equal(stream.exchanges, 1)
     assert.deepEqual(stream.appends.map(part => [part.sequence, part.payload[0]]), [[0, 10], [1, 18], [2, 18], [3, 26]])
     for (const { ids } of stream.appends) assert.deepEqual(ids, { requestId: stream.readId })
@@ -156,6 +173,23 @@ test('hold-to-talk previews revised partials and sends one final Cursor transcri
   } finally {
     session.close()
   }
+})
+
+test('cancelling an eager capture aborts setup and skips a late connection response', async () => {
+  const setup = Promise.withResolvers<CursorStream>()
+  let setupSignal: AbortSignal | undefined
+  const signal = new AbortController().signal
+  const capture = new CursorSpeechCapture({
+    start(signal) { setupSignal = signal; return setup.promise },
+    async read() { assert.fail('Cancelled capture opened a transcript read') },
+    async append() { assert.fail('Cancelled capture sent an append') },
+  }, signal)
+  assert(setupSignal)
+  capture.cancel()
+  assert(setupSignal.aborted)
+  setup.resolve({ requestId: 'synthetic-id', accessToken: 'synthetic-session' })
+  await setImmediate()
+  await assert.rejects(capture.finish(signal), { name: 'AbortError' })
 })
 
 test('a cancelled speech stream suppresses partials already in flight', { timeout: 2000 }, async () => {

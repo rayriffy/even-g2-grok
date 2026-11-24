@@ -150,3 +150,8 @@
 .composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--spacing-same); align-items: end; }
 .composer textarea { min-height: 48px; max-height: 112px; field-sizing: content; line-height: 24px; }
 .voice-status { color: var(--color-text-dim); overflow-wrap: anywhere; }
+.dictation-timings { color: var(--color-text-dim); }
+.dictation-timings summary { cursor: pointer; min-height: 28px; }
+.dictation-timings dl { display: grid; gap: var(--spacing-same); padding: var(--spacing-same) 0; }
+.dictation-timings dl > div { display: flex; justify-content: space-between; gap: var(--spacing-cross); }
+.dictation-timings dd { font-variant-numeric: tabular-nums; white-space: nowrap; }

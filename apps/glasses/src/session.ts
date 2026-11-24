@@ -1,4 +1,4 @@
-import type { SpeechCapture } from './asr/cursor-stream.ts'
+import type { SpeechCapture, SpeechStreamTimings } from './asr/cursor-stream.ts'
 import type { AccountProfile, Bot, BotClient, Message, Profile } from './client.ts'
 import { demos } from './demo.ts'
 import { ACCOUNT_ROWS, followPage, INBOX_ROWS } from './hud-text.ts'
@@ -11,6 +11,11 @@ export interface AccountStorage {
 }
 
 export type View = 'inbox' | 'accounts' | 'chat'
+
+export interface DictationTimings extends SpeechStreamTimings {
+  micStopMs: number
+  releaseToReadyMs: number
+}
 
 export function accountLabel(account: Pick<Profile, 'name' | 'email'>) {
   const name = account.name.replace(/\s+/gu, ' ').trim()
@@ -62,6 +67,7 @@ export class Session {
   accountStatus = ''
   voiceStatus = ''
   speechPreview = ''
+  dictationTimings?: DictationTimings
   recording = false
   working = false
   onboarding = false
@@ -313,6 +319,7 @@ export class Session {
     this.voiceStatus = status
     this.recording = recording
     this.speechPreview = ''
+    if (recording) this.dictationTimings = undefined
     this.render()
   }
 
@@ -329,7 +336,7 @@ export class Session {
     if (account) return this.client.streamSpeech?.(account.key, this.epoch.signal, onPartial)
   }
 
-  async processAudio(wav: Blob | undefined, stream?: SpeechCapture) {
+  async processAudio(wav: Blob | undefined, stream?: SpeechCapture, timing?: { releasedAt: number; micStoppedAt: number }) {
     const target = this.target()
     if (!target || !this.voiceAvailable || this.working) {
       stream?.cancel()
@@ -349,6 +356,13 @@ export class Session {
         : await this.client.transcribe(target.account.key, wav, signal)
       const text = transcript.trim()
       if (signal.aborted) return
+      if (timing && stream?.timings) {
+        this.dictationTimings = {
+          ...stream.timings,
+          micStopMs: timing.micStoppedAt - timing.releasedAt,
+          releaseToReadyMs: performance.now() - timing.releasedAt,
+        }
+      }
       if (!text) this.microphone('No speech heard. Try again.')
       else await this.deliver(target, text)
     } catch (error) {
@@ -438,6 +452,7 @@ export class Session {
     }
     this.recording = false
     this.speechPreview = ''
+    this.dictationTimings = undefined
   }
 
   close() {

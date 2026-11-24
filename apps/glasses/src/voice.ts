@@ -7,7 +7,7 @@ export class PushToTalk {
   private cycle = 0
 
   private readonly mic: (enabled: boolean) => Promise<boolean>
-  private readonly stopped: (wav?: Blob) => void
+  private readonly stopped: (wav: Blob | undefined, micStoppedAt: number) => void
   private readonly failed: (message: string) => void
 
   constructor(mic: PushToTalk['mic'], stopped: PushToTalk['stopped'], failed: PushToTalk['failed']) {
@@ -49,7 +49,10 @@ export class PushToTalk {
     if (cycle !== this.cycle) return
     if (!ok) this.failed('Microphone stop failed. Close the app to reset it.')
     else if (!started) this.failed('Microphone unavailable. Check the glasses connection and permissions.')
-    else this.stopped(recording.finish())
+    else {
+      const micStoppedAt = performance.now()
+      this.stopped(recording.finish(), micStoppedAt)
+    }
   }
 
   cancel() {
