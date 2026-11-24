@@ -22,7 +22,7 @@ if (!demo) {
   }
 }
 
-const output = resolve(root, process.env.EHPK_OUTPUT ?? (demo ? 'artifacts/grok-bot-demo.ehpk' : 'artifacts/grok-bot.ehpk'))
+const output = resolve(root, '../..', process.env.EHPK_OUTPUT ?? (demo ? 'artifacts/grok-bot-demo.ehpk' : 'artifacts/grok-bot.ehpk'))
 const temp = await mkdtemp(join(tmpdir(), 'grok-bot-pack-'))
 const manifestPath = join(temp, 'app.json')
 const dist = join(temp, 'dist')
@@ -47,7 +47,7 @@ try {
   } else {
     manifest.permissions.push({
       name: 'network',
-      desc: 'Connect to your Grok Bots and transcribe your push-to-talk audio through your gateway.',
+      desc: 'Connect to your Grok Bots and transcribe your push-to-talk audio through gateway.',
       whitelist: [gatewayOrigin, 'https://react.dev/errors/', 'https://cursor.com/loginDeepControl'],
     })
   }

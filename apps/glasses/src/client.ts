@@ -1,13 +1,7 @@
 import { CursorSpeechCapture, type CursorStream, type SpeechCapture } from './asr/cursor-stream.ts'
+import type { AccountProfile, Bot, ReadResult, ReadTarget, Transcript } from '@rayriffy/g2-grokbot-protocol'
 
-export interface ChatRef { agentId: string; sessionId: string }
-export interface Bot { id: string; name: string; chat?: ChatRef; kind?: 'group' }
-export interface Profile { id: string; name: string; email?: string; bots: Bot[]; botNames?: string[] }
-export type AccountProfile = Omit<Profile, 'bots'> & { bots?: Bot[] }
-export interface Message { id: string; role: 'you' | 'bot'; text: string; at: number }
-export interface Transcript { messages: Message[]; cursor: string; busy: boolean; reset?: boolean }
-export interface ReadTarget { bot: Bot; cursor: string }
-export type ReadResult = { id: string } & ({ transcript: Transcript } | { error: string })
+export type { AccountProfile, Bot, ChatRef, Message, Profile, ReadResult, ReadTarget, Transcript } from '@rayriffy/g2-grokbot-protocol'
 
 export interface BotClient {
   profile(token: string, signal?: AbortSignal): Promise<AccountProfile>

@@ -1,5 +1,5 @@
 name = "bot-terminal-gateway"
-main = "index.ts"
+main = "src/worker.ts"
 compatibility_date = "2026-11-21"
 workers_dev = true
 

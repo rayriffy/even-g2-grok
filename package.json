@@ -11,36 +11,15 @@
     }
   },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
-    "simulate": "evenhub-simulator http://localhost:5173",
-    "capture:listing": "node scripts/listing/capture.mjs",
-    "pack:demo": "node scripts/pack.mjs --demo",
-    "test": "node --test tests/*.test.ts",
-    "gateway": "bun gateway/index.ts",
-    "pack:live": "node scripts/pack.mjs"
-  },
-  "dependencies": {
-    "@evenrealities/even_hub_sdk": "^0.0.16",
-    "@evenrealities/pretext": "0.1.4",
-    "class-variance-authority": "~0.7.1",
-    "clsx": "^2.1.1",
-    "even-toolkit": "1.7.7",
-    "hono": "4.13.19",
-    "markdown-it": "15.0.3",
-    "react": "19.3.1",
-    "react-dom": "19.3.1",
-    "tailwind-merge": "^3.7.1"
-  },
-  "devDependencies": {
-    "@evenrealities/evenhub-cli": "^0.2.0",
-    "@evenrealities/evenhub-simulator": "^0.9.5",
-    "@tailwindcss/vite": "4.3.5",
-    "@types/react": "^19.3.0",
-    "@types/react-dom": "^19.3.0",
-    "tailwindcss": "4.3.5",
-    "typescript": "^7.0.2",
-    "vite": "^8.3.8"
+    "dev": "pnpm --filter @rayriffy/g2-grokbot-glasses dev",
+    "build": "pnpm -r build",
+    "preview": "pnpm --filter @rayriffy/g2-grokbot-glasses preview",
+    "simulate": "pnpm --filter @rayriffy/g2-grokbot-glasses simulate",
+    "capture:listing": "pnpm --filter @rayriffy/g2-grokbot-glasses capture:listing",
+    "pack:demo": "pnpm --filter @rayriffy/g2-grokbot-glasses pack:demo",
+    "pack:live": "pnpm --filter @rayriffy/g2-grokbot-glasses pack:live",
+    "pack:gateway": "node -e \"require('node:fs').mkdirSync('artifacts', { recursive: true })\" && pnpm --dir packages/gateway pack --pack-destination ../../artifacts",
+    "test": "pnpm -r test",
+    "gateway": "pnpm --filter @rayriffy/g2-grokbot-gateway dev"
   }
 }

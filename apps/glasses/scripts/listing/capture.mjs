@@ -20,7 +20,7 @@ if (values.help) {
 const { version } = JSON.parse(await readFile(join(root, 'app.json'), 'utf8'))
 const scenes = JSON.parse(await readFile(new URL('./scenes.json', import.meta.url), 'utf8'))
 const stamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-')
-const output = resolve(root, values.output ?? 'artifacts/grok-bot-listing-' + version + '-' + stamp)
+const output = resolve(root, '../..', values.output ?? 'artifacts/grok-bot-listing-' + version + '-' + stamp)
 await requireNewDirectory(output)
 
 const scratch = await mkdtemp(join(tmpdir(), 'grok-listing-'))

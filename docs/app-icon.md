@@ -7,7 +7,7 @@ read_when:
 
 # App icon
 
-Use [Classic Orb](../assets/grok-bot-icon.png) as the EvenHub listing icon for `com.rayriffy.grokbot`. Set it in the listing or pass `--icon assets/grok-bot-icon.png` to `evenhub create` or `evenhub update`. The icon is listing metadata. You can update it independently of the EHPK. [EvenHub app commands](https://hub.evenrealities.com/docs/cli/apps)
+Use [Classic Orb](../assets/grok-bot-icon.png) as the EvenHub listing icon for `com.rayriffy.grokbot`. When running `evenhub create` or `evenhub update` from `apps/glasses`, pass `--icon ../../assets/grok-bot-icon.png`. The icon is listing metadata. You can update it independently of the EHPK. [EvenHub app commands](https://hub.evenrealities.com/docs/cli/apps)
 
 The Even OS 2.0 icon grid in the public Figma guide uses a 32×32 canvas, a nominal 2 px inset, and proportional key shapes. The EvenHub listing requires a 24×24 PNG, so the artwork uses a 12×12 grid with each cell expanded to a 2×2 block. [Even Realities design guidelines](https://www.figma.com/design/X82y5uJvqMH95jgOfmV34j/Even-Realities---Software-Design-Guidelines--Public-?node-id=10001-75932) [EvenHub icon rules](https://hub.evenrealities.com/docs/cli/apps#icon-rules)
 

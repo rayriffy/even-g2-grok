@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createGateway } from '../gateway/index.ts'
-import { gatewayClient } from '../src/client.ts'
-import { Session, type StoredAccounts } from '../src/session.ts'
-import { PushToTalk } from '../src/voice.ts'
+import { Elysia } from 'elysia'
+import { createGateway } from '../src/index.ts'
+import { gatewayClient } from '../../../apps/glasses/src/client.ts'
+import { Session, type StoredAccounts } from '../../../apps/glasses/src/session.ts'
+import { PushToTalk } from '../../../apps/glasses/src/voice.ts'
+import { request } from './request.ts'
 
 const sdkKey = 'fixture-stream-sdk-key'
 const accessToken = 'fixture-stream-session'
@@ -66,7 +68,7 @@ function fixture(authorized: boolean) {
     return Response.json({})
   })
   return {
-    client: gatewayClient('https://gateway.invalid', async (input, init) => upstream.request(new Request(input, init))),
+    client: gatewayClient('https://gateway.invalid', async (input, init) => upstream.fetch(new Request(input, init))),
     upstream, appends, firstAudio,
     get readId() { return readId },
     get exchanges() { return exchanges },
@@ -136,22 +138,25 @@ test('a rejected streaming credential sends no audio', { timeout: 2000 }, async 
   assert.ok(appends.length <= 1 && appends.every(append => append.sequence === 0))
   const p = '/transcribe/cursor/streams/00000000-0000-4000-8000-000000000001/'
   const headers = { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/octet-stream' }
-  assert.equal((await upstream.request(p + '1', { method: 'POST', headers, body: new Uint8Array(1) })).status, 400)
-  assert.equal((await upstream.request(p + '81', { method: 'POST', headers })).status, 400)
-  assert.equal((await upstream.request(p + '1', { method: 'POST', headers, body: new Uint8Array(12_802) })).status, 413)
+  assert.equal((await request(upstream, p + '1', { method: 'POST', headers, body: new Uint8Array(1) })).status, 400)
+  assert.equal((await request(upstream, p + '81', { method: 'POST', headers })).status, 400)
+  assert.equal((await request(upstream, p + '1', { method: 'POST', headers, body: new Uint8Array(12_802) })).status, 413)
 })
 
-test('only the transcript read extends the Bun idle timeout', async () => {
+test('only the mounted transcript read extends the host Bun idle timeout', async () => {
   const timeouts: Array<{ method: string; seconds: number }> = []
-  const env = { timeout(request: Request, seconds: number) { timeouts.push({ method: request.method, seconds }) } }
-  const app = createGateway(async () => new Response(frame({}, true), {
+  const plugin = createGateway(async () => new Response(frame({}, true), {
     headers: { 'Content-Type': 'application/connect+json' },
   }))
-  const route = '/transcribe/cursor/streams/00000000-0000-4000-8000-000000000001'
+  const app = new Elysia().use(new Elysia({ prefix: '/grokbot-gateway' }).use(plugin))
+  app.server = {
+    timeout(request: Request, seconds: number) { timeouts.push({ method: request.method, seconds }) },
+  } as NonNullable<typeof app.server>
+  const route = '/grokbot-gateway/transcribe/cursor/streams/00000000-0000-4000-8000-000000000001'
   const headers = { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/octet-stream' }
-  assert.equal((await app.request('/ping', {}, env)).status, 200)
-  assert.equal((await app.request(route + '/0', { method: 'POST', headers }, env)).status, 200)
-  const response = await app.request(route, { headers }, env)
+  assert.equal((await request(app, '/grokbot-gateway/ping')).status, 200)
+  assert.equal((await request(app, route + '/0', { method: 'POST', headers })).status, 200)
+  const response = await request(app, route, { headers })
   assert.equal(response.status, 200)
   await response.arrayBuffer()
   assert.deepEqual(timeouts, [{ method: 'GET', seconds: 50 }])

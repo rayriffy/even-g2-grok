@@ -1,19 +1,22 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createGateway } from '../gateway/index.ts'
-import { prepareCursorLogin } from '../src/cursor-login.ts'
-import { gatewayClient } from '../src/client.ts'
-import { Session, type StoredAccounts } from '../src/session.ts'
+import { Elysia } from 'elysia'
+import { createGateway } from '../src/index.ts'
+import { prepareCursorLogin } from '../../../apps/glasses/src/cursor-login.ts'
+import { gatewayClient } from '../../../apps/glasses/src/client.ts'
+import { Session, type StoredAccounts } from '../../../apps/glasses/src/session.ts'
+import { request } from './request.ts'
 
 const gatewayBase = 'https://gateway.invalid/grokbot-gateway'
 const token = 'synthetic-access-token'
 const key = 'synthetic-cursor-api-key'
 
 function fakeBrowser(app: ReturnType<typeof createGateway>) {
+  const router = new Elysia({ prefix: new URL(gatewayBase).pathname }).use(app)
   return ((url, init) => {
     const incoming = new Request(url, init)
     assert.ok(incoming.url.startsWith(gatewayBase + '/'))
-    return app.fetch(new Request('https://gateway.invalid' + incoming.url.slice(gatewayBase.length), incoming))
+    return router.fetch(incoming)
   }) as typeof fetch
 }
 
@@ -103,7 +106,7 @@ test('a failed upstream login never exposes provider response bodies or uses a G
     requests.push(request)
     return Response.json({ error: 'provider private diagnostic' }, { status: 404 })
   })
-  const invalid = await app.request('/auth/cursor/poll', { method: 'POST', body: '{"uuid":"invalid","verifier":"bogus"}' })
+  const invalid = await request(app, '/auth/cursor/poll', { method: 'POST', body: '{"uuid":"invalid","verifier":"bogus"}' })
   assert.equal(invalid.status, 400)
   assert.equal(requests.length, 0)
   const handoff = await prepareCursorLogin(gatewayBase, fakeBrowser(app))

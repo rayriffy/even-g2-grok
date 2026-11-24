@@ -8,9 +8,15 @@ read_when:
 
 # Gateway integration
 
-Grok Bot for Even G2 runs in the Even app's WebView. The G2 renders the HUD, emits gestures, and supplies microphone PCM. The WebView owns account selection, transcript state, and the recording lifecycle. Hono forwards chat and dictation requests to Cursor. The gateway runs without a database or stored provider credentials. [EvenHub architecture](https://hub.evenrealities.com/docs/get-started/architecture)
+Grok Bot for Even G2 runs in the Even app's WebView. The G2 renders the HUD, emits gestures, and supplies microphone PCM. The WebView owns account selection, transcript state, and the recording lifecycle. Elysia forwards chat and dictation requests to Cursor. The gateway runs without a database or stored provider credentials. [EvenHub architecture](https://hub.evenrealities.com/docs/get-started/architecture)
 
 The header inventory reflects source revision `02d5285`. The production streaming and idle-timeout checks were performed against gateway revision `a25fc5a`.
+
+## Elysia plugin and workspace layout
+
+The gateway package exports an Elysia instance named `gateway`. Mount it under the host's `/grokbot-gateway` prefix. A separate Bun entry point listens on port 3000 by default for the container image. The glasses app and gateway share wire types through `packages/protocol`. The npm package bundles the gateway's runtime code and uses the host's Elysia through a peer dependency. [Plugin usage](../packages/gateway/README.md) · [Standalone entry point](../packages/gateway/src/serve.ts)
+
+Elysia leaves the POST body unread until the gateway applies the route's byte limit. The gateway counts the bytes read even when the client omits `Content-Length`. Gateway CORS and response headers apply to its own routes when mounted. The transcript route uses the host Bun server to set its 50-second request idle timeout. [Body limits](../packages/gateway/src/http.ts) · [Mount and header tests](../packages/gateway/tests/gateway.test.ts) · [Streaming tests](../packages/gateway/tests/cursor-stream.test.ts)
 
 ## Gateway-free feasibility
 
@@ -45,19 +51,19 @@ Direct Cursor requests from the G2 app use an `Authorization` header, JSON or Co
 
 ### Decision
 
-A localhost development prototype is feasible at the browser transport layer. The actual origins of installed EHPKs on iOS and Android still need direct observation. Use the gateway for packaged builds until Cursor permits those origins or EvenHub offers a supported native HTTP transport. A direct implementation would also need to verify SDK sign-in, account discovery, text, and both speech routes from the installed app before replacing the gateway. [Manifest network permission](../scripts/pack.mjs) · [Current WebView transport](../src/client.ts)
+A localhost development prototype is feasible at the browser transport layer. The actual origins of installed EHPKs on iOS and Android still need direct observation. Use the gateway for packaged builds until Cursor permits those origins or EvenHub offers a supported native HTTP transport. A direct implementation would also need to verify SDK sign-in, account discovery, text, and both speech routes from the installed app before replacing the gateway. [Manifest network permission](../apps/glasses/scripts/pack.mjs) · [Current WebView transport](../apps/glasses/src/client.ts)
 
 A separate native phone app could make server calls through the OS networking stack. That option has a different distribution path and requires compatible Even device SDK access and approved Cursor credentials. The documented Even native device SDK uses Enterprise device licenses. [Even native SDK](https://hub.evenrealities.com/docs/enterprise/native)
 
 ## Sign-in and credentials
 
-1. The WebView generates a one-time verifier and copies a Cursor SDK approval URL with its hash. The user pastes the URL into the phone browser while the dashboard waits. The gateway polls Cursor with the verifier and uses the returned login token to mint a 90-day personal SDK key. [Phone sign-in](../src/cursor-login.ts) · [Gateway sign-in](../gateway/cursor-login.ts) · [Cursor SDK authentication](https://cursor.com/docs/sdk/typescript#cursorauth)
-2. EvenHub app-scoped storage on the phone holds each account's SDK key. Native reads and sends exchange that key for a short-lived Cursor bearer. The gateway returns a new speech request ID and the exchanged bearer when creating a voice stream. The WebView holds the streaming bearer in memory. [Gateway routes](../gateway/index.ts) · [Phone storage and lifecycle](../src/main.ts)
-3. Starting in 0.1.10, the phone app uses the selected Cursor account for dictation and removes any old `speechKey` field when restoring accounts. The gateway's `/transcribe` route supports earlier builds that offered xAI speech. [Account restore and speech submission](../src/session.ts) · [xAI Speech to Text](https://docs.x.ai/developers/model-capabilities/audio/speech-to-text)
+1. The WebView generates a one-time verifier and copies a Cursor SDK approval URL with its hash. The user pastes the URL into the phone browser while the dashboard waits. The gateway polls Cursor with the verifier and uses the returned login token to mint a 90-day personal SDK key. [Phone sign-in](../apps/glasses/src/cursor-login.ts) · [Gateway sign-in](../packages/gateway/src/cursor-login.ts) · [Cursor SDK authentication](https://cursor.com/docs/sdk/typescript#cursorauth)
+2. EvenHub app-scoped storage on the phone holds each account's SDK key. Native reads and sends exchange that key for a short-lived Cursor bearer. The gateway returns a new speech request ID and the exchanged bearer when creating a voice stream. The WebView holds the streaming bearer in memory. [Gateway routes](../packages/gateway/src/index.ts) · [Phone storage and lifecycle](../apps/glasses/src/main.ts)
+3. Starting in 0.1.10, the phone app uses the selected Cursor account for dictation and removes any old `speechKey` field when restoring accounts. The gateway's `/transcribe` route supports earlier builds that offered xAI speech. [Account restore and speech submission](../apps/glasses/src/session.ts) · [xAI Speech to Text](https://docs.x.ai/developers/model-capabilities/audio/speech-to-text)
 
 ## Current routes and headers
 
-The table lists app-set headers and labels the generated multipart content type. JSON requests use `Accept: application/json`. Header names are case-insensitive. [Gateway request helpers](../gateway/index.ts) · [Login request helper](../gateway/cursor-login.ts)
+The table lists app-set headers and labels the generated multipart content type. JSON requests use `Accept: application/json`. Header names are case-insensitive. [Gateway request helpers](../packages/gateway/src/index.ts) · [Login request helper](../packages/gateway/src/cursor-login.ts)
 
 | Job | Upstream request | Credential and headers |
 | --- | --- | --- |
@@ -73,11 +79,11 @@ The table lists app-set headers and labels the generated multipart content type.
 | Legacy exact-name link and numeric chat sessions | `POST api.cursor.com/v0/grokbot/sessions`, `GET /v0/grokbot/sessions/:id/entries`, and `POST /v0/grokbot/sessions/:id/messages` | SDK key as bearer, `x-cursor-client-type: agent-serve`, a fresh `x-request-id` per request, and JSON content type on POST. |
 | Legacy xAI batch speech | `POST api.x.ai/v1/stt` | xAI key as bearer. Fetch generates the multipart content type and boundary. |
 
-The Bun runtime supplies the outbound user agent. A loopback audit with synthetic credentials verified the app-set headers and the runtime-generated headers independently. The three legacy calls explicitly opt in to their client-type and request-ID headers. Speech stream correlation uses a request ID in the body. [Legacy and streaming header tests](../tests/gateway.test.ts) · [Streaming tests](../tests/cursor-stream.test.ts) · [Bun fetch headers](https://bun.com/docs/runtime/networking/fetch#custom-headers)
+The Bun runtime supplies the outbound user agent. A loopback audit with synthetic credentials verified the app-set headers and the runtime-generated headers independently. The three legacy calls explicitly opt in to their client-type and request-ID headers. Speech stream correlation uses a request ID in the body. [Legacy and streaming header tests](../packages/gateway/tests/gateway.test.ts) · [Streaming tests](../packages/gateway/tests/cursor-stream.test.ts) · [Bun fetch headers](https://bun.com/docs/runtime/networking/fetch#custom-headers)
 
 ## EvenHub whitelist review
 
-The production EHPK for 0.1.10 declares `https://api.rayriffy.com` in its network whitelist. The WebView sends account, chat, and dictation requests to that origin under `/grokbot-gateway`. The gateway handles server-to-server calls to the providers. For sign-in, the app copies the Cursor approval URL for the user to open in their phone browser. The dashboard polls the gateway for completion. [Package manifest generation](../scripts/pack.mjs) · [WebView requests](../src/client.ts) · [Cursor sign-in](../src/cursor-login.ts) · [EvenHub network permissions](https://github.com/even-realities/everything-evenhub/blob/main/plugins/everything-evenhub/skills/build-and-deploy/SKILL.md#cors-in-the-webview)
+The production EHPK for 0.1.10 declares `https://api.rayriffy.com` in its network whitelist. The WebView sends account, chat, and dictation requests to that origin under `/grokbot-gateway`. The gateway handles server-to-server calls to the providers. For sign-in, the app copies the Cursor approval URL for the user to open in their phone browser. The dashboard polls the gateway for completion. [Package manifest generation](../apps/glasses/scripts/pack.mjs) · [WebView requests](../apps/glasses/src/client.ts) · [Cursor sign-in](../apps/glasses/src/cursor-login.ts) · [EvenHub network permissions](https://github.com/even-realities/everything-evenhub/blob/main/plugins/everything-evenhub/skills/build-and-deploy/SKILL.md#cors-in-the-webview)
 
 A production build with `pnpm exec vite build --sourcemap` and the same gateway base URL mapped the four URLs from the review notice to these sources.
 
@@ -88,19 +94,19 @@ A production build with `pnpm exec vite build --sourcemap` and the same gateway 
 | `http://${i}` | `markdown-it` normalizes the display text of bare links and strips the added scheme. |
 | `https://cursor.com/loginDeepControl` | The phone app constructs the approval URL shown in the copy-link flow. |
 
-Rendering a reply formats its links locally. Following a link is a separate user action. Starting in 0.1.11, the live manifest includes the full React diagnostics and Cursor approval URLs alongside the gateway origin in response to the review. The EvenHub CLI packages both URL entries with their paths. [Markdown rendering](../src/message-markdown.ts) · [Sign-in polling test](../tests/cursor-login.test.ts) · [Release packaging](../scripts/pack.mjs)
+Rendering a reply formats its links locally. Following a link is a separate user action. Starting in 0.1.11, the live manifest includes the full React diagnostics and Cursor approval URLs alongside the gateway origin in response to the review. The EvenHub CLI packages both URL entries with their paths. [Markdown rendering](../apps/glasses/src/message-markdown.ts) · [Sign-in polling test](../packages/gateway/tests/cursor-login.test.ts) · [Release packaging](../apps/glasses/scripts/pack.mjs)
 
 ## Hot paths
 
-**Chat.** The gateway discovers bots and group chats through the same roster RPC. It records the provider identity and viewer session for each native conversation. A local cursor tracks generation and update sequence. The phone refreshes every four seconds while it can display the result, with one bot read while chat is open and a bounded rotation for inbox previews. The gateway bounds reads and paginates recent bursts. Message delivery uses a client-generated ID and reuses that ID when an ambiguous send is retried. [Native roster and transcript adapter](../gateway/grok-bot.ts) · [Session state](../src/session.ts)
+**Chat.** The gateway discovers bots and group chats through the same roster RPC. It records the provider identity and viewer session for each native conversation. A local cursor tracks generation and update sequence. The phone refreshes every four seconds while it can display the result, with one bot read while chat is open and a bounded rotation for inbox previews. The gateway bounds reads and paginates recent bursts. Message delivery uses a client-generated ID and reuses that ID when an ambiguous send is retried. [Native roster and transcript adapter](../packages/gateway/src/grok-bot.ts) · [Session state](../apps/glasses/src/session.ts)
 
-**Dictation.** The WebView captures 16 kHz mono PCM while the gesture is held. The gateway converts audio chunks to the verified 24 kHz PCM format and forwards sequenced upload messages. A separate Connect response carries transcript frames. Release closes the microphone, finalizes the stream, and sends one finalized transcript to the selected conversation. Cancel and account switches abort the capture. The read has a 48-second upstream deadline and a 50-second Bun idle timeout. [G2 mic lifecycle](../src/voice.ts) · [Speech transport](../src/asr/cursor-stream.ts) · [Gateway audio encoding](../gateway/cursor-audio.ts) · [Connect streaming reference](https://connectrpc.com/docs/protocol/#streaming-rpcs)
+**Dictation.** The WebView captures 16 kHz mono PCM while the gesture is held. The gateway converts audio chunks to the verified 24 kHz PCM format and forwards sequenced upload messages. A separate Connect response carries transcript frames. Release closes the microphone, finalizes the stream, and sends one finalized transcript to the selected conversation. Cancel and account switches abort the capture. The read has a 48-second upstream deadline and a 50-second Bun idle timeout. [G2 mic lifecycle](../apps/glasses/src/voice.ts) · [Speech transport](../apps/glasses/src/asr/cursor-stream.ts) · [Gateway audio encoding](../packages/gateway/src/cursor-audio.ts) · [Connect streaming reference](https://connectrpc.com/docs/protocol/#streaming-rpcs)
 
 ```mermaid
 sequenceDiagram
     participant G2
     participant Phone as Even WebView
-    participant Gateway as Hono gateway
+    participant Gateway as Elysia gateway
     participant Cursor
     G2->>Phone: Hold, then PCM chunks
     Phone->>Gateway: Start stream with SDK key

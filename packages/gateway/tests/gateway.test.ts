@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createGateway } from '../gateway/index.ts'
-import { Recording } from '../src/asr/stt.ts'
-import { gatewayClient } from '../src/client.ts'
+import { Elysia } from 'elysia'
+import { createGateway, gateway } from '../src/index.ts'
+import { Recording } from '../../../apps/glasses/src/asr/stt.ts'
+import { gatewayClient } from '../../../apps/glasses/src/client.ts'
+import { request } from './request.ts'
 
 const cursorKey = 'test-cursor-account-one'
 const speechKey = 'test-xai-account-one'
@@ -10,10 +12,30 @@ const messageId = 'bca44fa6-1cf7-4b2b-b186-85546fbf07bb'
 
 test('ping returns plain-text pong without contacting a provider', async () => {
   const app = createGateway(async () => { assert.fail('Unexpected provider request') })
-  const response = await app.request('/ping')
+  const response = await request(app, '/ping')
   assert.equal(response.status, 200)
   assert.match(response.headers.get('Content-Type') ?? '', /^text\/plain\b/)
   assert.equal(await response.text(), 'pong')
+})
+
+test('the exported plugin respects the host prefix and keeps its HTTP policy route-local', async () => {
+  const router = new Elysia({ prefix: '/grokbot-gateway' }).use(gateway)
+  const app = new Elysia().use(router).get('/unrelated', () => 'host')
+  const ping = await request(app, '/grokbot-gateway/ping')
+  assert.equal(await ping.text(), 'pong')
+  assert.equal(ping.headers.get('Cache-Control'), 'no-store')
+  const unauthorized = await request(app, '/grokbot-gateway/profile', { headers: { Origin: 'null' } })
+  assert.equal(unauthorized.status, 401)
+  assert.equal(unauthorized.headers.get('Access-Control-Allow-Origin'), '*')
+  assert.equal((await request(app, '/grokbot-gateway/profile', { method: 'OPTIONS' })).status, 204)
+  const unknown = await request(app, '/grokbot-gateway/unknown')
+  assert.equal(unknown.status, 404)
+  assert.deepEqual(await unknown.json(), { error: 'Route unavailable.' })
+  assert.equal((await request(app, '/ping')).status, 404)
+  const unrelated = await request(app, '/unrelated')
+  assert.equal(await unrelated.text(), 'host')
+  assert.equal(unrelated.headers.get('Cache-Control'), null)
+  assert.equal(unrelated.headers.get('Access-Control-Allow-Origin'), null)
 })
 
 test('phone chat and legacy speech use separate credentials through Hono', async () => {
@@ -80,7 +102,7 @@ test('phone chat and legacy speech use separate credentials through Hono', async
       latestUpdatedSeq: '3', turn: { inFlight: false, queued: 0 },
     })
   })
-  const phone = gatewayClient('https://gateway.invalid', (input, init) => Promise.resolve(app.request(new Request(input, init))))
+  const phone = gatewayClient('https://gateway.invalid', (input, init) => Promise.resolve(app.fetch(new Request(input, init))))
   assert.deepEqual(await phone.profile(cursorKey), {
     id: '17', name: 'Studio', botNames: ['Scout', 'Editor'],
     bots: [{ id: 'grok:["private-id",""]', name: 'Scout', chat: { agentId: 'private-id', sessionId: '' } }],
@@ -91,7 +113,7 @@ test('phone chat and legacy speech use separate credentials through Hono', async
   assert.deepEqual(bot, { id: '123', name: 'Scout' })
   const recording = new Recording()
   recording.push(new Uint8Array(4_800))
-  const transcription = await app.request('/transcribe', {
+  const transcription = await request(app, '/transcribe', {
     method: 'POST', body: recording.finish(), headers: {
       Authorization: 'Bearer ' + speechKey, 'Content-Type': 'audio/wav',
     },
@@ -119,7 +141,7 @@ test('phone chat and legacy speech use separate credentials through Hono', async
 test('gateway allows WebView preflight and rejects unconfirmed linking, invalid destinations and audio', async () => {
   let hits = 0
   const app = createGateway(async () => { hits++; throw new Error('Unexpected upstream call') })
-  const preflight = await app.request('/transcribe', { method: 'OPTIONS', headers: {
+  const preflight = await request(app, '/transcribe', { method: 'OPTIONS', headers: {
     Origin: 'null', 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization,content-type',
   } })
   assert.equal(preflight.status, 204)
@@ -127,15 +149,15 @@ test('gateway allows WebView preflight and rejects unconfirmed linking, invalid 
   assert.match(preflight.headers.get('Access-Control-Allow-Headers')!, /Authorization/i)
   assert.equal(preflight.headers.get('Access-Control-Allow-Credentials'), null)
   const auth = { Authorization: 'Bearer ' + cursorKey }
-  assert.equal((await app.request('/profile')).status, 401)
-  assert.equal((await app.request('/bots/bad?after=-1', { headers: auth })).status, 400)
-  assert.equal((await app.request('/bots', {
+  assert.equal((await request(app, '/profile')).status, 401)
+  assert.equal((await request(app, '/bots/bad?after=-1', { headers: auth })).status, 400)
+  assert.equal((await request(app, '/bots', {
     method: 'POST', headers: auth, body: JSON.stringify({ name: 'Scout' }),
   })).status, 400)
-  assert.equal((await app.request('/transcribe', {
+  assert.equal((await request(app, '/transcribe', {
     method: 'POST', headers: { ...auth, 'Content-Type': 'audio/wav' }, body: new Uint8Array(48),
   })).status, 400)
-  assert.equal((await app.request('/transcribe', {
+  assert.equal((await request(app, '/transcribe', {
     method: 'POST', headers: { ...auth, 'Content-Type': 'audio/wav' }, body: new Uint8Array(960_045),
   })).status, 413)
   assert.equal(hits, 0)

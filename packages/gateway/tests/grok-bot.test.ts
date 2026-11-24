@@ -1,12 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setImmediate } from 'node:timers/promises'
-import { createGateway } from '../gateway/index.ts'
-import { readGrokChat } from '../gateway/grok-bot.ts'
-import { gatewayClient, type ReadResult } from '../src/client.ts'
-import { Session } from '../src/session.ts'
-import { Recording } from '../src/asr/stt.ts'
-import { glassFrame } from '../src/hud.ts'
+import { createGateway } from '../src/index.ts'
+import { readGrokChat } from '../src/grok-bot.ts'
+import { gatewayClient, type ReadResult } from '../../../apps/glasses/src/client.ts'
+import { Session } from '../../../apps/glasses/src/session.ts'
+import { Recording } from '../../../apps/glasses/src/asr/stt.ts'
+import { glassFrame } from '../../../apps/glasses/src/hud.ts'
+import { request } from './request.ts'
 
 const accountKey = 'test-personal-sdk-key'
 const accessToken = 'test-ephemeral-provider-session'
@@ -119,7 +120,7 @@ test('sign-in shows existing bot conversations and hold-to-talk uses the account
     submittedId = body.messageId
     return Response.json({ dispatched: true, delivery: 'GROK_BOT_USER_MESSAGE_DELIVERY_ACCEPTED_TEMPORAL' })
   })
-  const client = gatewayClient('https://gateway.invalid', (input, init) => Promise.resolve(app.request(new Request(input, init))))
+  const client = gatewayClient('https://gateway.invalid', (input, init) => Promise.resolve(app.fetch(new Request(input, init))))
   const session = new Session(client, { async load() {}, async save() {} }, false, () => {})
   assert.equal(await session.connect(accountKey), true)
   await setImmediate()
@@ -174,7 +175,7 @@ test('invalid native requests never reach Cursor and one chat failure leaves oth
     return Response.json({ generation: 1 })
   })
   const headers = { Authorization: `Bearer ${accountKey}`, 'Content-Type': 'application/json' }
-  const post = (targets: object[]) => app.request('/conversations/read', {
+  const post = (targets: object[]) => request(app, '/conversations/read', {
     method: 'POST', body: JSON.stringify({ targets }), headers,
   })
   const bad = await post([{ id: 'first', chat: { agentId: 'real', sessionId: '' }, cursor: 'g:fail:10' }])
@@ -201,7 +202,7 @@ test('a speech-only provider denial directs the signed-in user to the xAI option
   })
   const recording = new Recording()
   recording.push(new Uint8Array(4_800))
-  const response = await app.request('/transcribe/cursor', {
+  const response = await request(app, '/transcribe/cursor', {
     method: 'POST', body: recording.finish(), headers: {
       Authorization: `Bearer ${accountKey}`,
       'Content-Type': 'audio/wav',

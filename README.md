@@ -2,7 +2,7 @@
 
 <img width="905" height="504" alt="CleanShot 2026-11-23 at 18 08 05" src="https://github.com/user-attachments/assets/1c33f602-b62e-408c-b239-d5928ed617eb" />
 
-Read and message Grok Bots on Even Realities G2. Grok Bot for Even G2 runs in the Even app on your phone. A stateless Hono gateway handles the browser-to-provider connection, so your computer can be off.
+Read and message Grok Bots on Even Realities G2. Grok Bot for Even G2 runs in the Even app on your phone. A stateless Elysia gateway handles the browser-to-provider connection, so your computer can be off.
 
 The phone dashboard uses the [Even Toolkit](https://github.com/fabioglimb/even-toolkit) light theme and web components, bundled into the EHPK.
 
@@ -12,6 +12,8 @@ See the [gateway integration guide](docs/gateway-integration.md) for endpoint an
 
 Requires Node.js 24, pnpm 12, and Even App 2.2.10 or later.
 
+The pnpm workspace contains the [glasses app](apps/glasses), the [Elysia gateway](packages/gateway), and [shared wire types](packages/protocol). Bun runs and bundles the gateway. Run `pnpm dev` for the app and `pnpm gateway` for the standalone gateway. Set the app's local Vite variables in `apps/glasses/.env` or export them before running the root commands.
+
 ### Deploys.app
 
 The [gateway workflow](.github/workflows/gateway.yml) publishes `ghcr.io/rayriffy/grokbot-gateway` and deploys the tested image digest as `grokbot-gateway` in `gke.cluster-rcf2`. It runs on pushes to `main` and can also be run manually.
@@ -20,17 +22,17 @@ Set `DEPLOYS_AUTH_USER` and `DEPLOYS_AUTH_PASS` as repository secrets. Deploymen
 
 ### GitHub Actions app builds
 
-The [app packaging workflow](.github/workflows/package-app.yml) runs on pushes to `main`, pushes of `v*` tags, and manual runs. It runs the tests, builds the live app, and saves the EHPK as `grok-bot-v<version>.ehpk` under **Artifacts** on the workflow run. A tag such as `v0.1.13` must match the version in `app.json`. The workflow uses the deployed gateway URL by default and honors the `DEPLOYS_GATEWAY_BASE_URL` repository variable.
+The [app packaging workflow](.github/workflows/package-app.yml) runs on pushes to `main`, pushes of `v*` tags, and manual runs. It runs the tests, builds the live app, and saves the EHPK as `grok-bot-v<version>.ehpk` under **Artifacts** on the workflow run. A tag such as `v0.1.13` must match the version in [the app manifest](apps/glasses/app.json). The workflow uses the deployed gateway URL by default and honors the `DEPLOYS_GATEWAY_BASE_URL` repository variable.
 
 ### Other hosts and packaging
 
 1. Run `pnpm install --frozen-lockfile`.
-2. For a container host, build the [Dockerfile](Dockerfile) and expose port 3000 over HTTPS. Cloudflare Workers can deploy with `pnpm dlx wrangler deploy --config gateway/wrangler.toml`. Bun can serve the same export with `pnpm gateway`. Other hosts can mount the [gateway Fetch handler](gateway/index.ts) using their [Hono adapter](https://hono.dev/docs/getting-started/basic).
+2. For a container host, build the [Dockerfile](Dockerfile) and expose port 3000 over HTTPS. Start the standalone Bun server with `pnpm gateway`, or mount the [Elysia plugin](packages/gateway/README.md) in an existing API. For Cloudflare Workers, run `pnpm dlx wrangler deploy --config packages/gateway/wrangler.toml`. That entry point uses the Elysia Cloudflare adapter.
 3. Check `https://YOUR-GATEWAY/ping` returns `pong`.
 4. Run `VITE_GATEWAY_BASE_URL=https://api.rayriffy.com/grokbot-gateway pnpm pack:live`, substituting your own base URL if needed. The app keeps the path prefix in its requests, and the manifest whitelists the URL's origin. The output is `artifacts/grok-bot.ehpk`.
 5. Create the EvenHub app for `com.rayriffy.grokbot` on first upload. Install it from **Me → Apps → Private builds** and launch it from the phone. Use a Beta build to launch from the glasses menu. Repack when the gateway base URL changes. [EvenHub app creation](https://hub.evenrealities.com/docs/cli/apps) · [Private testing](https://hub.evenrealities.com/docs/test/private-testing) · [Beta testing](https://hub.evenrealities.com/docs/test/beta-testing)
 
-For updates to the existing listing, increment `version` in `app.json` before packing. EvenHub gives each uploaded version an immutable build. [EvenHub build uploads](https://hub.evenrealities.com/docs/cli/builds#evenhub-upload)
+For updates to the existing listing, increment `version` in [the app manifest](apps/glasses/app.json) before packing. EvenHub gives each uploaded version an immutable build. [EvenHub build uploads](https://hub.evenrealities.com/docs/cli/builds#evenhub-upload)
 
 Grok Bot adopted its current EvenHub identity in 0.1.7. When moving from Bot Terminal (`com.rayriffy.botterminal`), install the new app and sign in again. Account storage is scoped to the EvenHub app.
 

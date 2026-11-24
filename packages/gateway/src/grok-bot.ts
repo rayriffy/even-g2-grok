@@ -1,4 +1,4 @@
-import type { Bot, ChatRef, Message, Transcript } from '../src/client.ts'
+import type { Bot, ChatRef, Message, Transcript } from '@rayriffy/g2-grokbot-protocol'
 
 // Provider IDs are opaque. They travel only as JSON fields on authenticated RPCs.
 function providerId(value: unknown): value is string {
