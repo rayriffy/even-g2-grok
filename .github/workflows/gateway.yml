@@ -59,27 +59,27 @@ jobs:
             http://127.0.0.1:18080/ping)"
           test "$response" = pong
 
-      - name: Deploy gateway
-        uses: deploys-app/deploys-action@v1
-        with:
-          project: ${{ vars.DEPLOYS_PROJECT || 'rayriffy' }}
-          location: gke.cluster-rcf2
-          name: grokbot-gateway
-          image: ${{ env.IMAGE_NAME }}@${{ steps.image.outputs.digest }}
-          type: WebService
-          port: 3000
-          minReplicas: 1
-          maxReplicas: 4
-          pullSecret: ${{ vars.DEPLOYS_PULL_SECRET }}
-        env:
-          DEPLOYS_AUTH_USER: ${{ secrets.DEPLOYS_AUTH_USER }}
-          DEPLOYS_AUTH_PASS: ${{ secrets.DEPLOYS_AUTH_PASS }}
-
-      - name: Check deployed gateway
-        env:
-          GATEWAY_URL: ${{ vars.DEPLOYS_GATEWAY_BASE_URL || 'https://api.rayriffy.com/grokbot-gateway' }}
-        run: |
-          response="$(curl --proto '=https' --fail --silent --show-error --retry 12 --retry-all-errors \
-            --retry-delay 5 --max-time 8 "${GATEWAY_URL%/}/ping")"
-          test "$response" = pong
-          printf 'Gateway base URL: %s\n' "$GATEWAY_URL" >> "$GITHUB_STEP_SUMMARY"
+#       - name: Deploy gateway
+#         uses: deploys-app/deploys-action@v1
+#         with:
+#           project: ${{ vars.DEPLOYS_PROJECT || 'rayriffy' }}
+#           location: gke.cluster-rcf2
+#           name: grokbot-gateway
+#           image: ${{ env.IMAGE_NAME }}@${{ steps.image.outputs.digest }}
+#           type: WebService
+#           port: 3000
+#           minReplicas: 1
+#           maxReplicas: 4
+#           pullSecret: ${{ vars.DEPLOYS_PULL_SECRET }}
+#         env:
+#           DEPLOYS_AUTH_USER: ${{ secrets.DEPLOYS_AUTH_USER }}
+#           DEPLOYS_AUTH_PASS: ${{ secrets.DEPLOYS_AUTH_PASS }}
+#
+#       - name: Check deployed gateway
+#         env:
+#           GATEWAY_URL: ${{ vars.DEPLOYS_GATEWAY_BASE_URL || 'https://api.rayriffy.com/grokbot-gateway' }}
+#         run: |
+#           response="$(curl --proto '=https' --fail --silent --show-error --retry 12 --retry-all-errors \
+#             --retry-delay 5 --max-time 8 "${GATEWAY_URL%/}/ping")"
+#           test "$response" = pong
+#           printf 'Gateway base URL: %s\n' "$GATEWAY_URL" >> "$GITHUB_STEP_SUMMARY"
