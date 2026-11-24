@@ -4,7 +4,7 @@ import {
   type EvenAppBridge, type EvenHubEvent,
 } from '@evenrealities/even_hub_sdk'
 import { accountLabel, type Session } from './session.ts'
-import { ACCOUNT_ROWS, alignRight, chatViewport, HUD_BODY_WIDTH, INBOX_ROWS, preview, truncate } from './hud-text.ts'
+import { ACCOUNT_ROWS, alignRight, CHAT_ROWS, chatViewport, HUD_BODY_WIDTH, INBOX_ROWS, preview, truncate, wrap } from './hud-text.ts'
 import { messageText } from './message-markdown.ts'
 
 export const MENU_ACCOUNTS = 1
@@ -71,6 +71,7 @@ export function glassFrame(session: Session): GlassFrame {
   }
 
   const viewport = chatViewport(session.currentThread.messages, session.pageFromEnd)
+  const caption = session.speechPreview && wrap(session.speechPreview).slice(-CHAT_ROWS).join('\n')
   const waiting = session.currentThread.busy || session.currentThread.waitUntil > Date.now()
   let status = 'Ready'
   let hint = session.voiceAvailable ? 'Hold to talk   ·   Double tap back' : 'Connect an account on your phone'
@@ -91,8 +92,8 @@ export function glassFrame(session: Session): GlassFrame {
   return {
     screen: `chat:${JSON.stringify([session.active.id, session.currentBot?.id])}`,
     title: truncate(session.currentBot?.name ?? 'Grok Bot'),
-    body: viewport.body || 'No messages yet.',
-    dimmedRows: viewport.dimmedRows,
+    body: caption || viewport.body || 'No messages yet.',
+    dimmedRows: caption ? [] : viewport.dimmedRows,
     status,
     hint,
     pages: viewport.pages,

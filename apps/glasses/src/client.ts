@@ -9,7 +9,7 @@ export interface BotClient {
   read(token: string, targets: readonly ReadTarget[], signal: AbortSignal): Promise<ReadResult[]>
   send(token: string, bot: Bot, text: string, messageId: string, signal: AbortSignal): Promise<void>
   transcribe(token: string, wav: Blob, signal: AbortSignal): Promise<string>
-  streamSpeech?(token: string, signal: AbortSignal): SpeechCapture
+  streamSpeech?(token: string, signal: AbortSignal, onPartial?: (text: string) => void): SpeechCapture
 }
 
 export function gatewayClient(baseUrl: string, fetchRequest: typeof fetch = fetch): BotClient {
@@ -75,7 +75,7 @@ export function gatewayClient(baseUrl: string, fetchRequest: typeof fetch = fetc
       })
       return result.text
     },
-    streamSpeech: (token, signal) => new CursorSpeechCapture({
+    streamSpeech: (token, signal, onPartial) => new CursorSpeechCapture({
       start: signal => request<CursorStream>('/transcribe/cursor/streams', token, { method: 'POST', signal }),
       read: (stream, signal) => responseFor('/transcribe/cursor/streams/' + encodeURIComponent(stream.requestId),
         stream.accessToken, { signal }),
@@ -83,6 +83,6 @@ export function gatewayClient(baseUrl: string, fetchRequest: typeof fetch = fetc
         '/transcribe/cursor/streams/' + encodeURIComponent(stream.requestId) + '/' + sequence,
         stream.accessToken, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: pcm, signal },
       ),
-    }, signal),
+    }, signal, onPartial),
   }
 }

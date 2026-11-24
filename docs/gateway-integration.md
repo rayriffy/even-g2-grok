@@ -125,6 +125,34 @@ sequenceDiagram
     Gateway->>Cursor: SendGrokBotUserMessage
 ```
 
+### Live dictation preview
+
+Decoding the Connect response bodies in the 2026-11-22 iPhone dictation captures showed two `KIND_PARTIAL` frames and two `KIND_SEGMENT` frames at 14:45:11, and eight partial frames and three segment frames at 14:44:31. Both responses ended with one `KIND_FINAL` text frame and a Connect end-of-stream frame. The check counted frame kinds and text lengths without logging the transcribed words. Intermediate text sometimes changed or shortened between frames. The HAR captures establish the event kinds. Measuring their delivery during a G2 hold requires a live check with the app’s Cursor sign-in. [Capture references](research-and-troubleshooting.md#capture-references) · [Connect streaming envelopes](https://connectrpc.com/docs/protocol/#streaming-rpcs)
+
+The phone uses `KIND_PARTIAL` events from the existing stream to render a temporary caption on the active glasses chat. A revised partial replaces the previous caption. The HUD keeps the latest visible rows and updates them in place. Starting in 0.1.16, releasing the hold clears the caption and restores the conversation. The footer shows `Transcribing…` during finalization. Release flushes the audio and sends one finalized transcript after a successful end-of-stream frame. Cancelling, switching accounts, or leaving the chat also clears the preview. Segment events are reserved for future work on composing preview text across segments. [Stream reader](../apps/glasses/src/asr/cursor-stream.ts) · [Capture lifecycle](../apps/glasses/src/main.ts) · [Glasses renderer](../apps/glasses/src/hud.ts)
+
+The interim-frame test exposed a release race when an existing upload had already stopped at the full-chunk boundary. Release now waits for that upload to settle and runs a final flush before sending the stop frame. The test verifies the short tail reaches the provider and only the final transcript is sent. [Streaming regression test](../packages/gateway/tests/cursor-stream.test.ts)
+
+Elysia can expose a WebSocket if a future transport needs audio uploads and transcript updates on one connection. The existing HTTP upload and streamed response already carry the data needed for this preview. [Elysia WebSockets](https://elysiajs.com/patterns/websocket)
+
+### Transport and gateway load
+
+The two iPhone HAR exports record `POST StreamSttSSE` with HTTP 200 and `application/connect+json`, alongside 26 and 38 `POST BidiAppend` calls with JSON responses, respectively. The export labels both calls HTTP/1.1 and records no WebSocket upgrade for either route. This check used method, status, media type, and the presence of upgrade headers. [Capture references](research-and-troubleshooting.md#capture-references)
+
+For a full 30 seconds of continuous audio, the phone sends 960,000 bytes of 16 kHz PCM in 75 chunks, plus the stream setup and finalization requests. Encoding those chunks with the gateway's actual resampler, Connect payloads, Base64, and JSON produces 1,928,529 bytes across 77 upstream append bodies. Each leg makes 79 speech-related requests including the credential exchange or session creation and transcript read. These are payload counts before HTTP and TLS overhead, transcript data, and the subsequent chat send. [Chunk and queue bounds](../apps/glasses/src/asr/cursor-stream.ts) · [Audio encoder](../packages/gateway/src/cursor-audio.ts)
+
+| Simultaneous recordings | Append requests/s per leg during speech | Phone → gateway PCM | Gateway → Cursor audio JSON |
+| --- | --- | --- | --- |
+| 1 | 2.5 | 32 kB/s | 64.3 kB/s |
+| 100 | 250 | 3.2 MB/s | 6.43 MB/s |
+| 1,000 | 2,500 | 32 MB/s | 64.3 MB/s |
+
+On loopback with Bun 1.4.0, closing the client TCP connection after the gateway wrote a transcript chunk aborted the forwarded fetch and cancelled the mock provider's response body. Dropping a separate WebSocket after its upgrade triggered close code 1006. This exercises a detected disconnect. A silent network loss needs a deadline. The gateway sets a 48-second upstream transcript deadline and a 50-second Bun request idle timeout. The phone cancels on a reported glasses disconnect. [Transcript route](../packages/gateway/src/index.ts) · [Device lifecycle](../apps/glasses/src/main.ts) · [Bun request timeouts](https://bun.sh/docs/runtime/http/server#idleTimeout)
+
+A binary WebSocket can replace the phone-side upload requests and response stream with one connection per active recording. The gateway still resamples and sends the same JSON append requests to Cursor. A WebSocket handler needs to abort its provider requests and release its buffers when a close is detected. Use bounded queues, a recording lifetime, and a separate audio-idle deadline for abandoned captures. A successful ping and pong indicate a live socket. [Bun WebSocket limits](https://bun.sh/docs/runtime/http/websockets#timeouts-and-limits)
+
+WebTransport offers reliable streams and, over HTTP/3, optional datagrams. Ordered audio can use a reliable stream, while transcript updates can use a separate stream. Supporting it requires validating the Even WebView and the gateway ingress end to end. Safari 26.4 adds the browser API. Bun's HTTP/3 listener is experimental, and WebTransport needs a compatible server session handler. The upstream Cursor payload and request count stay the same when changing the phone-side transport. [WebTransport specification](https://www.w3.org/TR/webtransport/) · [WebKit support](https://webkit.org/blog/17862/webkit-features-for-safari-26-4/#webtransport) · [Bun HTTP/3](https://bun.sh/docs/runtime/http/server#http3-quic)
+
 ## iPhone launch, send, and receive review
 
 The Proxyman capture exported on 2026-11-22 at 15:31:01 Bangkok time contains 137 entries, including 96 requests to `api2.cursor.sh`. The relevant calls used POST. Entry numbers below are one-based indices in this export. See the [research notes](research-and-troubleshooting.md) for capture identification and verification steps.

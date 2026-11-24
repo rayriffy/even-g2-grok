@@ -16,7 +16,8 @@ const storageKey = 'bot-terminal-accounts-v1'
 let session: Session
 let hud: Awaited<ReturnType<typeof connectHud>> | undefined
 let voice: PushToTalk | undefined
-let target: { account: string; bot: string; source?: number; stream?: SpeechCapture } | undefined
+interface CaptureTarget { account: string; bot: string; source?: number; stream?: SpeechCapture; released?: boolean }
+let target: CaptureTarget | undefined
 
 function cancelCapture() {
   target?.stream?.cancel()
@@ -155,14 +156,22 @@ void ready.then(async connected => {
         session.microphone('Connect your account on the phone.')
         return
       }
-      target = { account: session.activeId, bot: bot.id, source: event.sysEvent?.eventSource, stream: session.beginSpeech() }
+      const capture: CaptureTarget = { account: session.activeId, bot: bot.id, source: event.sysEvent?.eventSource }
+      capture.stream = session.beginSpeech(text => {
+        if (target === capture && !capture.released) session.previewSpeech(text)
+      })
+      target = capture
       session.microphone('Listening…  Release to send', true)
       voice?.press()
       return
     }
     if (type === OsEventTypeList.LONG_PRESS_RELEASE_EVENT) {
       const source = event.sysEvent?.eventSource
-      if (target && (!source || !target.source || target.source === source)) void voice?.release()
+      if (target && !target.released && (!source || !target.source || target.source === source)) {
+        target.released = true
+        session.previewSpeech('')
+        void voice?.release()
+      }
       return
     }
     if (target) return

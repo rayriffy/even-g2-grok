@@ -153,7 +153,11 @@ async function applyScene(id: string) {
     case 'context-menu': await reset('studio', 'grok'); break
     case 'reading-history': await reset('studio', 'grok'); await scroll(-1, 4); break
     case 'group-chat': await reset('studio', 'crew'); break
-    case 'recording': await reset('studio', 'grok'); startMic(); break
+    case 'recording':
+      await reset('studio', 'grok')
+      startMic()
+      current.session.previewSpeech('Can I do that without going')
+      break
     case 'transcribing': await releaseMic(); break
     case 'sending': current.transcription.resolve(voicePrompt); break
     case 'waiting-for-reply':

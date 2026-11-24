@@ -21,7 +21,7 @@ export interface SpeechCapture {
   cancel(): void
 }
 
-async function finalTranscript(response: Response) {
+async function readTranscript(response: Response, onPartial: (text: string) => void) {
   if (!response.body) throw new Error('Grok Bot voice returned an empty stream.')
   const reader = response.body.getReader()
   let pending = new Uint8Array(0)
@@ -46,7 +46,9 @@ async function finalTranscript(response: Response) {
           if (event.error) throw new Error('Grok Bot could not complete voice transcription.')
           return final
         }
-        if (event.isFinal === true && typeof event.text === 'string') final = event.text
+        if (typeof event.text !== 'string') continue
+        if (event.isFinal === true) final = event.text
+        else if (event.kind === 'KIND_PARTIAL') onPartial(event.text)
       }
       pending = combined.slice(offset)
     }
@@ -59,6 +61,7 @@ export class CursorSpeechCapture implements SpeechCapture {
   private readonly controller = new AbortController()
   private readonly transport: Transport
   private readonly signal: AbortSignal
+  private readonly onPartial?: (text: string) => void
   private readonly audio = new Uint8Array(MAX_AUDIO_BYTES)
   private size = 0
   private sent = 0
@@ -69,9 +72,10 @@ export class CursorSpeechCapture implements SpeechCapture {
   private pumping?: Promise<void>
   private failure?: Error
 
-  constructor(transport: Transport, signal: AbortSignal) {
+  constructor(transport: Transport, signal: AbortSignal, onPartial?: (text: string) => void) {
     this.transport = transport
     this.signal = AbortSignal.any([signal, this.controller.signal])
+    this.onPartial = onPartial
   }
 
   push(pcm: Uint8Array) {
@@ -88,6 +92,9 @@ export class CursorSpeechCapture implements SpeechCapture {
     signal.addEventListener('abort', abort, { once: true })
     try {
       if (signal.aborted) abort()
+      this.check()
+      // An earlier pump may have stopped at the full-chunk boundary before release.
+      await this.pumping
       this.check()
       await this.pump()
       this.check()
@@ -134,10 +141,14 @@ export class CursorSpeechCapture implements SpeechCapture {
 
   private async open() {
     const stream = await this.transport.start(this.signal)
-    this.transcript = this.transport.read(stream, this.signal).then(finalTranscript).catch(error => {
-      this.fail(error)
-      return ''
-    })
+    this.transcript = this.transport.read(stream, this.signal)
+      .then(response => readTranscript(response, text => {
+        if (!this.signal.aborted) this.onPartial?.(text)
+      }))
+      .catch(error => {
+        this.fail(error)
+        return ''
+      })
     await this.transport.append(stream, this.sequence++, new Uint8Array(0), this.signal)
     return stream
   }

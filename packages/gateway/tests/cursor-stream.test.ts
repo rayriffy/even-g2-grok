@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { Elysia } from 'elysia'
+import { setImmediate } from 'node:timers/promises'
 import { createGateway } from '../src/index.ts'
 import { gatewayClient } from '../../../apps/glasses/src/client.ts'
+import { glassFrame } from '../../../apps/glasses/src/hud.ts'
 import { Session, type StoredAccounts } from '../../../apps/glasses/src/session.ts'
 import { PushToTalk } from '../../../apps/glasses/src/voice.ts'
 import { request } from './request.ts'
@@ -21,6 +23,8 @@ function frame(event: object, end = false) {
 
 function fixture(authorized: boolean) {
   let providerStream: ReadableStreamDefaultController<Uint8Array>
+  let opened!: () => void
+  const readOpen = new Promise<void>(resolve => { opened = resolve })
   let readId = ''
   let exchanges = 0
   const appends: Array<{ ids: { requestId: string }; sequence: number; payload: Buffer }> = []
@@ -48,7 +52,7 @@ function fixture(authorized: boolean) {
       readId = JSON.parse(data.subarray(5).toString()).requestId
       assert.match(readId, /^[0-9a-f-]{36}$/)
       if (!authorized) return Response.json({}, { status: 401 })
-      return new Response(new ReadableStream({ start(controller) { providerStream = controller } }), {
+      return new Response(new ReadableStream({ start(controller) { providerStream = controller; opened() } }), {
         headers: { 'Content-Type': 'application/connect+json' },
       })
     }
@@ -70,12 +74,19 @@ function fixture(authorized: boolean) {
   return {
     client: gatewayClient('https://gateway.invalid', async (input, init) => upstream.fetch(new Request(input, init))),
     upstream, appends, firstAudio,
+    async emit(event: object) {
+      await readOpen
+      const bytes = frame(event)
+      providerStream.enqueue(bytes.subarray(0, 9))
+      providerStream.enqueue(bytes.subarray(9))
+    },
+    close() { providerStream.close() },
     get readId() { return readId },
     get exchanges() { return exchanges },
   }
 }
 
-test('restored accounts drop old voice keys and hold-to-talk sends one Cursor transcript', { timeout: 2000 }, async () => {
+test('hold-to-talk previews revised partials and sends one final Cursor transcript', { timeout: 2000 }, async () => {
   const stream = fixture(true)
   const sends: string[] = []
   const owner = { id: 'owner', name: 'Owner', email: 'owner@example.test', key: sdkKey, bots: [{ id: 'bot', name: 'Bot' }] }
@@ -98,7 +109,15 @@ test('restored accounts drop old voice keys and hold-to-talk sends one Cursor tr
   assert.deepEqual(session.accounts, expected.accounts)
   assert.deepEqual(stored, expected)
   session.select()
-  const capture = session.beginSpeech()!
+  session.microphone('Listening…', true)
+  const partials: string[] = []
+  let previewChanged!: () => void
+  const revisedPreview = new Promise<void>(resolve => { previewChanged = resolve })
+  const capture = session.beginSpeech(text => {
+    partials.push(text)
+    session.previewSpeech(text)
+    if (text === 'This is a stream') previewChanged()
+  })!
   let delivery: Promise<void> | undefined
   const mic = new PushToTalk(async () => true, wav => { delivery = session.processAudio(wav, capture) }, assert.fail)
   mic.press()
@@ -107,6 +126,13 @@ test('restored accounts drop old voice keys and hold-to-talk sends one Cursor tr
   capture.push(pcm.subarray(0, 12799))
   capture.push(pcm.subarray(12799))
   await stream.firstAudio
+  await stream.emit({ kind: 'KIND_PARTIAL', isFinal: false, text: 'This is a streamed conversation' })
+  await stream.emit({ kind: 'KIND_SEGMENT', isFinal: false, text: 'Unconfirmed segment' })
+  await stream.emit({ kind: 'KIND_PARTIAL', isFinal: false, text: 'This is a stream' })
+  await revisedPreview
+  assert.deepEqual(partials, ['This is a streamed conversation', 'This is a stream'])
+  assert.equal(glassFrame(session).body, 'This is a stream')
+  assert.equal(glassFrame(session).hint, 'Release to send')
   assert.deepEqual(sends, [])
   assert.deepEqual(stream.appends.map(part => part.sequence), [0, 1])
   const tail = new Uint8Array(4800)
@@ -117,8 +143,10 @@ test('restored accounts drop old voice keys and hold-to-talk sends one Cursor tr
   try {
     await delivery
     assert.deepEqual(sends, [phrase])
+    assert.equal(partials.length, 2)
+    assert.equal(session.speechPreview, '')
     assert.equal(stream.exchanges, 1)
-    assert.deepEqual(stream.appends.map(part => part.sequence), [0, 1, 2, 3])
+    assert.deepEqual(stream.appends.map(part => [part.sequence, part.payload[0]]), [[0, 10], [1, 18], [2, 18], [3, 26]])
     for (const { ids } of stream.appends) assert.deepEqual(ids, { requestId: stream.readId })
     assert.deepEqual(stream.appends[0].payload, Buffer.from([10, 4, 32, 192, 187, 1]))
     assert.equal(stream.appends[1].payload.length, 19_208)
@@ -128,6 +156,19 @@ test('restored accounts drop old voice keys and hold-to-talk sends one Cursor tr
   } finally {
     session.close()
   }
+})
+
+test('a cancelled speech stream suppresses partials already in flight', { timeout: 2000 }, async () => {
+  const stream = fixture(true)
+  const previews: string[] = []
+  const capture = stream.client.streamSpeech!(sdkKey, new AbortController().signal, text => previews.push(text))
+  capture.push(new Uint8Array(12_800))
+  await stream.firstAudio
+  capture.cancel()
+  await stream.emit({ kind: 'KIND_PARTIAL', isFinal: false, text: 'Late preview' })
+  stream.close()
+  await setImmediate()
+  assert.deepEqual(previews, [])
 })
 
 test('a rejected streaming credential sends no audio', { timeout: 2000 }, async () => {

@@ -28,6 +28,7 @@ interface Target { account: Account; bot: Bot; signal: AbortSignal }
 interface Retry { text: string; id: string }
 
 const EMPTY_THREAD: Thread = { cursor: '-1', messages: [], busy: false, waitUntil: 0 }
+const MAX_MESSAGE_LENGTH = 4000
 const compareId = (a: Message, b: Message) => {
   const difference = BigInt(a.id) - BigInt(b.id)
   return difference < 0n ? -1 : difference > 0n ? 1 : 0
@@ -60,6 +61,7 @@ export class Session {
   pageFromEnd = 0
   accountStatus = ''
   voiceStatus = ''
+  speechPreview = ''
   recording = false
   working = false
   onboarding = false
@@ -310,12 +312,21 @@ export class Session {
   microphone(status: string, recording = false) {
     this.voiceStatus = status
     this.recording = recording
+    this.speechPreview = ''
     this.render()
   }
 
-  beginSpeech() {
+  previewSpeech(text: string) {
+    if (!this.recording) return
+    const preview = text.slice(-MAX_MESSAGE_LENGTH).trim()
+    if (preview === this.speechPreview) return
+    this.speechPreview = preview
+    this.render()
+  }
+
+  beginSpeech(onPartial?: (text: string) => void) {
     const account = this.active
-    if (account) return this.client.streamSpeech?.(account.key, this.epoch.signal)
+    if (account) return this.client.streamSpeech?.(account.key, this.epoch.signal, onPartial)
   }
 
   async processAudio(wav: Blob | undefined, stream?: SpeechCapture) {
@@ -426,6 +437,7 @@ export class Session {
       this.working = false
     }
     this.recording = false
+    this.speechPreview = ''
   }
 
   close() {
@@ -440,7 +452,7 @@ export class Session {
   }
 
   private async deliver(target: Target, text: string) {
-    if (text.length > 4000) throw new Error('Message is too long. Limit 4,000 characters.')
+    if (text.length > MAX_MESSAGE_LENGTH) throw new Error('Message is too long. Limit 4,000 characters.')
     const key = `${target.account.id}/${target.bot.id}`
     const previous = this.retry.get(key)
     const id = previous?.text === text ? previous.id : newMessageId()

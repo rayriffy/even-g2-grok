@@ -241,6 +241,42 @@ test('hold captures bytes, release closes microphone then submits exactly one tr
   assert.deepEqual(toggles, [true, false, true, false])
 })
 
+test('live captions fit the HUD and release restores the chat during finalization', async () => {
+  const sends: string[] = []
+  const { session } = fixture({ ...demoClient(), async send(_key, _bot, text) { sends.push(text) } })
+  await session.connect('studio')
+  session.select()
+  await setImmediate()
+  const transcript = glassFrame(session)
+  assert.match(transcript.body, /three routes/)
+  const lines = Array.from({ length: 12 }, (_, i) => 'Caption line ' + (i + 1))
+  session.microphone('Listening…', true)
+  session.previewSpeech(lines.join('\n'))
+  const recording = glassFrame(session)
+  assert.equal(recording.screen, transcript.screen)
+  assert.equal(recording.pages, transcript.pages)
+  assert.equal(recording.body, lines.slice(-7).join('\n'))
+  assert.deepEqual(recording.dimmedRows, [])
+
+  let resolveFinal!: (text: string) => void
+  const final = new Promise<string>(resolve => { resolveFinal = resolve })
+  const delivery = session.processAudio(new Blob(), { push() {}, cancel() {}, finish: () => final })
+  assert.equal(glassFrame(session).status, 'Transcribing…')
+  assert.equal(glassFrame(session).body, transcript.body)
+  assert.deepEqual(glassFrame(session).dimmedRows, transcript.dimmedRows)
+  assert.equal(session.speechPreview, '')
+  session.previewSpeech('Late partial')
+  assert.equal(glassFrame(session).body, transcript.body)
+  session.inbox()
+  assert.equal(session.speechPreview, '')
+  session.previewSpeech('Late partial')
+  resolveFinal('Late final')
+  await delivery
+  assert.equal(session.speechPreview, '')
+  assert.deepEqual(sends, [])
+  session.close()
+})
+
 test('a delayed transcript read cannot repopulate an account after switching', async () => {
   const demo = demoClient()
   let resolve!: (result: ReadResult[]) => void
